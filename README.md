@@ -23,6 +23,16 @@ uvicorn app.main:app --reload
 
 Open `http://127.0.0.1:8000`.
 
+On first launch, the dashboard asks for a real profile instead of loading demo data automatically. Use **Create adaptive plan** for your own profile, or **Load demo profile** when you want seeded workout history.
+
+On Windows, you can also run:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\run-fitgen.ps1 8010
+```
+
+Then open `http://127.0.0.1:8010`.
+
 ## PostgreSQL
 
 By default, FitGen AI uses `sqlite:///./fitgen.db`. To use PostgreSQL:
@@ -67,4 +77,3 @@ flowchart LR
     WR --> WP
     API -. optional .-> LLM["OpenAI / Local LLM"]
 ```
-

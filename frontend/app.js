@@ -1,4 +1,5 @@
 let state = null;
+const ACTIVE_USER_KEY = "fitgen-active-user-id";
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
@@ -15,8 +16,20 @@ async function api(path, options = {}) {
 }
 
 async function load() {
-  state = await api("/api/bootstrap");
-  render();
+  const activeUserId = localStorage.getItem(ACTIVE_USER_KEY);
+  if (!activeUserId) {
+    showOnboarding();
+    return;
+  }
+
+  try {
+    state = await api(`/api/users/${activeUserId}/dashboard`);
+    showApp();
+    render();
+  } catch (error) {
+    localStorage.removeItem(ACTIVE_USER_KEY);
+    showOnboarding("Saved profile was not found. Create a new one or load the demo profile.");
+  }
 }
 
 function render() {
@@ -28,6 +41,15 @@ function render() {
   renderRecentLogs();
   drawVolumeChart();
   $("#exportLink").href = `/api/users/${state.user.id}/report/export`;
+}
+
+function showOnboarding(message = "") {
+  $("#onboarding").classList.add("active");
+  $("#onboardingError").textContent = message;
+}
+
+function showApp() {
+  $("#onboarding").classList.remove("active");
 }
 
 function renderProfile() {
@@ -179,6 +201,15 @@ function label(value) {
   return String(value).replaceAll("_", " ");
 }
 
+function profilePayload(form) {
+  const payload = Object.fromEntries(new FormData(form).entries());
+  payload.age = Number(payload.age);
+  payload.height_cm = Number(payload.height_cm);
+  payload.weight_kg = Number(payload.weight_kg);
+  payload.budget_amount = Number(payload.budget_amount);
+  return payload;
+}
+
 $$(".tab").forEach((button) => {
   button.addEventListener("click", () => {
     $$(".tab").forEach((item) => item.classList.remove("active"));
@@ -198,6 +229,37 @@ $("#reviewBtn").addEventListener("click", async () => {
   await api(`/api/users/${state.user.id}/weekly-review`, { method: "POST" });
   state = await api(`/api/users/${state.user.id}/dashboard`);
   render();
+});
+
+$("#profileForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  $("#onboardingError").textContent = "";
+  try {
+    const user = await api("/api/users", {
+      method: "POST",
+      body: JSON.stringify(profilePayload(event.currentTarget)),
+    });
+    localStorage.setItem(ACTIVE_USER_KEY, String(user.id));
+    state = await api(`/api/users/${user.id}/dashboard`);
+    showApp();
+    render();
+  } catch (error) {
+    $("#onboardingError").textContent = "Could not create profile. Check the fields and try again.";
+  }
+});
+
+$("#demoBtn").addEventListener("click", async () => {
+  const data = await api("/api/bootstrap");
+  localStorage.setItem(ACTIVE_USER_KEY, String(data.user.id));
+  state = data;
+  showApp();
+  render();
+});
+
+$("#switchProfileBtn").addEventListener("click", () => {
+  localStorage.removeItem(ACTIVE_USER_KEY);
+  state = null;
+  showOnboarding();
 });
 
 $("#logForm").addEventListener("submit", async (event) => {

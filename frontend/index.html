@@ -7,6 +7,65 @@
     <link rel="stylesheet" href="/static/styles.css" />
   </head>
   <body>
+    <section class="onboarding active" id="onboarding">
+      <div class="onboarding-copy">
+        <p class="eyebrow">FitGen AI</p>
+        <h1>Build a plan from your real constraints</h1>
+        <p>
+          Create a profile once. FitGen AI will generate your first workout and diet plan, then keep adapting from
+          your logs and feedback.
+        </p>
+        <button id="demoBtn">Load demo profile</button>
+      </div>
+
+      <form id="profileForm" class="onboarding-form">
+        <div class="form-header">
+          <h2>Profile setup</h2>
+          <p class="muted">Used by the planner for equipment, budget, food, and progression rules.</p>
+        </div>
+        <div class="form-grid profile-grid">
+          <label>Name<input name="name" required placeholder="Your name" /></label>
+          <label>Age<input name="age" type="number" min="13" max="90" value="25" required /></label>
+          <label>Height cm<input name="height_cm" type="number" min="101" max="229" value="174" required /></label>
+          <label>Weight kg<input name="weight_kg" type="number" min="31" max="249" step="0.1" value="75" required /></label>
+          <label>
+            Goal
+            <select name="fitness_goal" required>
+              <option value="fat_loss">Fat loss</option>
+              <option value="muscle_gain">Muscle gain</option>
+              <option value="maintenance">Maintenance</option>
+            </select>
+          </label>
+          <label>
+            Diet
+            <select name="diet_preference" required>
+              <option value="veg">Veg</option>
+              <option value="non_veg">Non-veg</option>
+            </select>
+          </label>
+          <label>Budget<input name="budget_amount" type="number" min="1" value="220" required /></label>
+          <label>
+            Period
+            <select name="budget_period" required>
+              <option value="daily">Daily</option>
+              <option value="weekly">Weekly</option>
+            </select>
+          </label>
+          <label>Location<input name="location" required placeholder="Pune, India" /></label>
+          <label>
+            Gym type
+            <select name="gym_type" required>
+              <option value="home">Home</option>
+              <option value="local_gym">Local gym</option>
+              <option value="premium_gym">Premium gym</option>
+            </select>
+          </label>
+        </div>
+        <button class="primary" type="submit">Create adaptive plan</button>
+        <p id="onboardingError" class="error"></p>
+      </form>
+    </section>
+
     <main class="shell">
       <aside class="sidebar">
         <div>
@@ -20,6 +79,7 @@
           <button class="tab" data-view="feedback">Feedback</button>
         </nav>
         <div class="profile-card" id="profileCard"></div>
+        <button id="switchProfileBtn">Switch profile</button>
       </aside>
 
       <section class="content">
