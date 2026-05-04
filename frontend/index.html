@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>FitGen AI</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <aside class="sidebar">
+        <div>
+          <p class="eyebrow">FitGen AI</p>
+          <h1>Adaptive trainer system</h1>
+        </div>
+        <nav class="tabs" aria-label="Primary">
+          <button class="tab active" data-view="dashboard">Dashboard</button>
+          <button class="tab" data-view="workout">Workout</button>
+          <button class="tab" data-view="diet">Diet</button>
+          <button class="tab" data-view="feedback">Feedback</button>
+        </nav>
+        <div class="profile-card" id="profileCard"></div>
+      </aside>
+
+      <section class="content">
+        <section class="view active" id="dashboard">
+          <div class="topbar">
+            <div>
+              <p class="eyebrow">Today</p>
+              <h2 id="dashboardTitle">Loading plan</h2>
+            </div>
+            <div class="actions">
+              <button id="reviewBtn">Run weekly review</button>
+              <button id="planBtn" class="primary">Re-plan week</button>
+            </div>
+          </div>
+
+          <div class="stats-grid">
+            <article class="stat">
+              <span>Completion</span>
+              <strong id="completionRate">0%</strong>
+            </article>
+            <article class="stat">
+              <span>Logs</span>
+              <strong id="totalLogs">0</strong>
+            </article>
+            <article class="stat">
+              <span>Calories</span>
+              <strong id="calorieTarget">0</strong>
+            </article>
+            <article class="stat">
+              <span>Protein</span>
+              <strong id="proteinTarget">0g</strong>
+            </article>
+          </div>
+
+          <div class="main-grid">
+            <article class="panel">
+              <header>
+                <h3>Progress volume</h3>
+                <span>Last 30 logs</span>
+              </header>
+              <canvas id="volumeChart" width="760" height="260"></canvas>
+            </article>
+            <article class="panel">
+              <header>
+                <h3>Weekly review</h3>
+                <span id="reviewWeek">Pending</span>
+              </header>
+              <p id="weeklySummary"></p>
+              <p id="weeklyAdjustment" class="muted"></p>
+            </article>
+          </div>
+        </section>
+
+        <section class="view" id="workout">
+          <div class="topbar">
+            <div>
+              <p class="eyebrow">Training</p>
+              <h2>Current weekly plan</h2>
+            </div>
+          </div>
+          <div id="workoutPlan" class="day-grid"></div>
+          <article class="panel log-panel">
+            <header>
+              <h3>Log performance</h3>
+              <span>Feeds progressive overload</span>
+            </header>
+            <form id="logForm" class="form-grid">
+              <label>Exercise<input name="exercise_name" required /></label>
+              <label>Date<input name="performed_on" type="date" required /></label>
+              <label>Sets<input name="sets_completed" type="number" min="0" max="20" value="3" /></label>
+              <label>Reps<input name="reps_completed" type="number" min="0" max="300" value="30" /></label>
+              <label>Weight kg<input name="weight_kg" type="number" min="0" step="0.5" value="20" /></label>
+              <label>Effort<input name="perceived_effort" type="number" min="1" max="10" value="7" /></label>
+              <label class="check"><input name="completed" type="checkbox" checked /> Completed</label>
+              <button class="primary" type="submit">Save log</button>
+            </form>
+          </article>
+        </section>
+
+        <section class="view" id="diet">
+          <div class="topbar">
+            <div>
+              <p class="eyebrow">Nutrition</p>
+              <h2>India-friendly diet plan</h2>
+            </div>
+            <a id="exportLink" class="button" href="#">Export report</a>
+          </div>
+          <div id="dietPlan" class="meal-grid"></div>
+        </section>
+
+        <section class="view" id="feedback">
+          <div class="topbar">
+            <div>
+              <p class="eyebrow">Adaptation</p>
+              <h2>Tell the system what changed</h2>
+            </div>
+          </div>
+          <article class="panel">
+            <div class="feedback-buttons">
+              <button data-signal="too_hard">Too hard</button>
+              <button data-signal="too_easy">Too easy</button>
+              <button data-signal="missed_workout">Missed workout</button>
+              <button data-signal="joint_pain">Joint pain</button>
+              <button data-signal="good">Good fit</button>
+            </div>
+            <textarea id="feedbackMessage" placeholder="Add context: sleep, soreness, travel, equipment issue"></textarea>
+            <p id="feedbackResult" class="muted"></p>
+          </article>
+          <article class="panel">
+            <header>
+              <h3>Recent logs</h3>
+              <span>Memory used by planner</span>
+            </header>
+            <div id="recentLogs"></div>
+          </article>
+        </section>
+      </section>
+    </main>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>
