@@ -33,14 +33,40 @@ powershell -ExecutionPolicy Bypass -File .\run-fitgen.ps1 8010
 
 Then open `http://127.0.0.1:8010`.
 
+SQLite local demos auto-create tables on startup. For managed databases, use migrations instead.
+
 ## PostgreSQL
 
 By default, FitGen AI uses `sqlite:///./fitgen.db`. To use PostgreSQL:
 
 ```bash
 set DATABASE_URL=postgresql+psycopg://fitgen:fitgen@localhost:5432/fitgen_ai
+set AUTO_CREATE_TABLES=false
+alembic upgrade head
 uvicorn app.main:app --reload
 ```
+
+For Linux/macOS shells:
+
+```bash
+export DATABASE_URL=postgresql+psycopg://fitgen:fitgen@localhost:5432/fitgen_ai
+export AUTO_CREATE_TABLES=false
+alembic upgrade head
+uvicorn app.main:app --reload
+```
+
+Copy `.env.example` to `.env` for local configuration. Keep secrets out of Git.
+
+## Database Migrations
+
+FitGen AI uses Alembic for schema versioning:
+
+```bash
+alembic upgrade head
+alembic revision --autogenerate -m "describe change"
+```
+
+The first migration creates users, workout plans, workout exercises, workout logs, feedback, diet plans, and weekly reviews.
 
 ## Optional LLM Enrichment
 
