@@ -1,22 +1,63 @@
 let state = null;
 const ACTIVE_USER_KEY = "fitgen-active-user-id";
+const AUTH_TOKEN_KEY = "fitgen-auth-token";
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
 
 async function api(path, options = {}) {
+  const token = localStorage.getItem(AUTH_TOKEN_KEY);
   const response = await fetch(path, {
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...options.headers,
+    },
     ...options,
   });
   if (!response.ok) {
-    throw new Error(await response.text());
+    const message = await errorMessage(response);
+    throw new Error(message);
   }
   return response.json();
 }
 
+async function errorMessage(response) {
+  try {
+    const data = await response.json();
+    if (Array.isArray(data.detail)) {
+      return data.detail.map((item) => item.msg).join(" ");
+    }
+    return data.detail || response.statusText;
+  } catch (error) {
+    return response.statusText;
+  }
+}
+
 async function load() {
+  const token = localStorage.getItem(AUTH_TOKEN_KEY);
   const activeUserId = localStorage.getItem(ACTIVE_USER_KEY);
+  if (token) {
+    try {
+      const session = await api("/api/auth/me");
+      const profileId = activeUserId || session.profile?.id;
+      if (!profileId) {
+        showOnboarding("Account found, but no profile exists yet.");
+        return;
+      }
+      localStorage.setItem(ACTIVE_USER_KEY, String(profileId));
+      state = await api(`/api/users/${profileId}/dashboard`);
+      showApp();
+      render();
+      return;
+    } catch (error) {
+      localStorage.removeItem(AUTH_TOKEN_KEY);
+      localStorage.removeItem(ACTIVE_USER_KEY);
+      showOnboarding("Session expired. Log in again.");
+      return;
+    }
+  }
+
   if (!activeUserId) {
     showOnboarding();
     return;
@@ -203,11 +244,22 @@ function label(value) {
 
 function profilePayload(form) {
   const payload = Object.fromEntries(new FormData(form).entries());
-  payload.age = Number(payload.age);
-  payload.height_cm = Number(payload.height_cm);
-  payload.weight_kg = Number(payload.weight_kg);
-  payload.budget_amount = Number(payload.budget_amount);
-  return payload;
+  return {
+    email: payload.email,
+    password: payload.password,
+    profile: {
+      name: payload.name,
+      age: Number(payload.age),
+      height_cm: Number(payload.height_cm),
+      weight_kg: Number(payload.weight_kg),
+      fitness_goal: payload.fitness_goal,
+      diet_preference: payload.diet_preference,
+      budget_amount: Number(payload.budget_amount),
+      budget_period: payload.budget_period,
+      location: payload.location,
+      gym_type: payload.gym_type,
+    },
+  };
 }
 
 $$(".tab").forEach((button) => {
@@ -235,20 +287,22 @@ $("#profileForm").addEventListener("submit", async (event) => {
   event.preventDefault();
   $("#onboardingError").textContent = "";
   try {
-    const user = await api("/api/users", {
+    const session = await api("/api/auth/signup", {
       method: "POST",
       body: JSON.stringify(profilePayload(event.currentTarget)),
     });
-    localStorage.setItem(ACTIVE_USER_KEY, String(user.id));
-    state = await api(`/api/users/${user.id}/dashboard`);
+    localStorage.setItem(AUTH_TOKEN_KEY, session.token);
+    localStorage.setItem(ACTIVE_USER_KEY, String(session.profile.id));
+    state = await api(`/api/users/${session.profile.id}/dashboard`);
     showApp();
     render();
   } catch (error) {
-    $("#onboardingError").textContent = "Could not create profile. Check the fields and try again.";
+    $("#onboardingError").textContent = `Could not create account: ${error.message}`;
   }
 });
 
 $("#demoBtn").addEventListener("click", async () => {
+  localStorage.removeItem(AUTH_TOKEN_KEY);
   const data = await api("/api/bootstrap");
   localStorage.setItem(ACTIVE_USER_KEY, String(data.user.id));
   state = data;
@@ -257,9 +311,34 @@ $("#demoBtn").addEventListener("click", async () => {
 });
 
 $("#switchProfileBtn").addEventListener("click", () => {
+  localStorage.removeItem(AUTH_TOKEN_KEY);
   localStorage.removeItem(ACTIVE_USER_KEY);
   state = null;
   showOnboarding();
+});
+
+$("#loginBtn").addEventListener("click", async () => {
+  $("#loginError").textContent = "";
+  try {
+    const session = await api("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({
+        email: $("input[name='login_email']").value,
+        password: $("input[name='login_password']").value,
+      }),
+    });
+    if (!session.profile) {
+      $("#loginError").textContent = "Account has no profile yet.";
+      return;
+    }
+    localStorage.setItem(AUTH_TOKEN_KEY, session.token);
+    localStorage.setItem(ACTIVE_USER_KEY, String(session.profile.id));
+    state = await api(`/api/users/${session.profile.id}/dashboard`);
+    showApp();
+    render();
+  } catch (error) {
+    $("#loginError").textContent = error.message || "Invalid email or password.";
+  }
 });
 
 $("#logForm").addEventListener("submit", async (event) => {

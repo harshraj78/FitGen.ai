@@ -18,6 +18,25 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    existing_tables = set(sa.inspect(op.get_bind()).get_table_names())
+
+    if "user_profiles" not in existing_tables:
+        _create_user_profiles()
+    if "diet_plans" not in existing_tables:
+        _create_diet_plans()
+    if "feedback" not in existing_tables:
+        _create_feedback()
+    if "weekly_reviews" not in existing_tables:
+        _create_weekly_reviews()
+    if "workout_logs" not in existing_tables:
+        _create_workout_logs()
+    if "workout_plans" not in existing_tables:
+        _create_workout_plans()
+    if "workout_exercises" not in existing_tables:
+        _create_workout_exercises()
+
+
+def _create_user_profiles() -> None:
     op.create_table(
         "user_profiles",
         sa.Column("id", sa.Integer(), nullable=False),
@@ -34,6 +53,9 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(), server_default=sa.func.now(), nullable=False),
         sa.PrimaryKeyConstraint("id"),
     )
+
+
+def _create_diet_plans() -> None:
     op.create_table(
         "diet_plans",
         sa.Column("id", sa.Integer(), nullable=False),
@@ -49,6 +71,9 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index(op.f("ix_diet_plans_user_id"), "diet_plans", ["user_id"], unique=False)
+
+
+def _create_feedback() -> None:
     op.create_table(
         "feedback",
         sa.Column("id", sa.Integer(), nullable=False),
@@ -60,6 +85,9 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index(op.f("ix_feedback_user_id"), "feedback", ["user_id"], unique=False)
+
+
+def _create_weekly_reviews() -> None:
     op.create_table(
         "weekly_reviews",
         sa.Column("id", sa.Integer(), nullable=False),
@@ -74,6 +102,9 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index(op.f("ix_weekly_reviews_user_id"), "weekly_reviews", ["user_id"], unique=False)
+
+
+def _create_workout_logs() -> None:
     op.create_table(
         "workout_logs",
         sa.Column("id", sa.Integer(), nullable=False),
@@ -90,6 +121,9 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index(op.f("ix_workout_logs_user_id"), "workout_logs", ["user_id"], unique=False)
+
+
+def _create_workout_plans() -> None:
     op.create_table(
         "workout_plans",
         sa.Column("id", sa.Integer(), nullable=False),
@@ -103,6 +137,9 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index(op.f("ix_workout_plans_user_id"), "workout_plans", ["user_id"], unique=False)
+
+
+def _create_workout_exercises() -> None:
     op.create_table(
         "workout_exercises",
         sa.Column("id", sa.Integer(), nullable=False),

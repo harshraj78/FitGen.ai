@@ -1,7 +1,7 @@
 from datetime import date, timedelta
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app import models, schemas
 from app.db import get_db, init_db
+from app.services.auth import account_dict, create_session, get_account_from_authorization, hash_password, normalize_email, verify_password
 from app.services.diet_planner import DietPlanner
 from app.services.review import WeeklyReviewService
 from app.services.workout_planner import WorkoutPlanner
@@ -42,9 +43,67 @@ def health() -> dict:
     return {"status": "ok", "service": "FitGen AI"}
 
 
+def _optional_account(
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+) -> models.Account | None:
+    return get_account_from_authorization(db, authorization)
+
+
+def _require_account(
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+) -> models.Account:
+    account = get_account_from_authorization(db, authorization)
+    if not account:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    return account
+
+
+@app.post("/api/auth/signup", response_model=schemas.AuthOut)
+def signup(payload: schemas.AccountSignup, db: Session = Depends(get_db)) -> dict:
+    email = normalize_email(payload.email)
+    existing = db.query(models.Account).filter(models.Account.email == email).first()
+    if existing:
+        raise HTTPException(status_code=409, detail="Account already exists")
+
+    account = models.Account(email=email, password_hash=hash_password(payload.password))
+    db.add(account)
+    db.flush()
+    user = models.UserProfile(account_id=account.id, **payload.profile.model_dump())
+    db.add(user)
+    db.commit()
+    db.refresh(account)
+    db.refresh(user)
+    WorkoutPlanner(db).generate_week(user)
+    DietPlanner(db).generate_week(user)
+    session = create_session(db, account)
+    return {"token": session.token, "account": account_dict(account), "profile": _user_dict(user)}
+
+
+@app.post("/api/auth/login", response_model=schemas.AuthOut)
+def login(payload: schemas.AccountLogin, db: Session = Depends(get_db)) -> dict:
+    account = db.query(models.Account).filter(models.Account.email == normalize_email(payload.email)).first()
+    if not account or not verify_password(payload.password, account.password_hash):
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+    session = create_session(db, account)
+    profile = db.query(models.UserProfile).filter(models.UserProfile.account_id == account.id).order_by(models.UserProfile.id).first()
+    return {"token": session.token, "account": account_dict(account), "profile": _user_dict(profile) if profile else None}
+
+
+@app.get("/api/auth/me", response_model=schemas.AuthOut)
+def me(account: models.Account = Depends(_require_account), db: Session = Depends(get_db)) -> dict:
+    profile = db.query(models.UserProfile).filter(models.UserProfile.account_id == account.id).order_by(models.UserProfile.id).first()
+    return {"token": "", "account": account_dict(account), "profile": _user_dict(profile) if profile else None}
+
+
 @app.post("/api/users", response_model=schemas.UserProfileOut)
-def create_user(payload: schemas.UserProfileCreate, db: Session = Depends(get_db)) -> models.UserProfile:
-    user = models.UserProfile(**payload.model_dump())
+def create_user(
+    payload: schemas.UserProfileCreate,
+    db: Session = Depends(get_db),
+    account: models.Account | None = Depends(_optional_account),
+) -> models.UserProfile:
+    user = models.UserProfile(account_id=account.id if account else None, **payload.model_dump())
     db.add(user)
     db.commit()
     db.refresh(user)
@@ -54,8 +113,12 @@ def create_user(payload: schemas.UserProfileCreate, db: Session = Depends(get_db
 
 
 @app.get("/api/users/{user_id}", response_model=schemas.UserProfileOut)
-def get_user(user_id: int, db: Session = Depends(get_db)) -> models.UserProfile:
-    return _get_user(db, user_id)
+def get_user(
+    user_id: int,
+    db: Session = Depends(get_db),
+    account: models.Account | None = Depends(_optional_account),
+) -> models.UserProfile:
+    return _get_user(db, user_id, account)
 
 
 @app.get("/api/bootstrap")
@@ -85,8 +148,12 @@ def bootstrap(db: Session = Depends(get_db)) -> dict:
 
 
 @app.get("/api/users/{user_id}/dashboard", response_model=schemas.DashboardOut)
-def dashboard(user_id: int, db: Session = Depends(get_db)) -> dict:
-    user = _get_user(db, user_id)
+def dashboard(
+    user_id: int,
+    db: Session = Depends(get_db),
+    account: models.Account | None = Depends(_optional_account),
+) -> dict:
+    user = _get_user(db, user_id, account)
     workout_planner = WorkoutPlanner(db)
     diet_planner = DietPlanner(db)
     review_service = WeeklyReviewService(db)
@@ -103,23 +170,36 @@ def dashboard(user_id: int, db: Session = Depends(get_db)) -> dict:
 
 
 @app.post("/api/users/{user_id}/plans/weekly")
-def generate_weekly_plan(user_id: int, db: Session = Depends(get_db)) -> dict:
-    user = _get_user(db, user_id)
+def generate_weekly_plan(
+    user_id: int,
+    db: Session = Depends(get_db),
+    account: models.Account | None = Depends(_optional_account),
+) -> dict:
+    user = _get_user(db, user_id, account)
     plan = WorkoutPlanner(db).generate_week(user)
     diet = DietPlanner(db).generate_week(user, plan.week_start)
     return {"workout_plan": WorkoutPlanner(db).serialize_plan(plan), "diet_plan": DietPlanner(db).serialize_plan(diet)}
 
 
 @app.get("/api/users/{user_id}/workouts/current")
-def current_workout(user_id: int, db: Session = Depends(get_db)) -> dict:
-    _get_user(db, user_id)
+def current_workout(
+    user_id: int,
+    db: Session = Depends(get_db),
+    account: models.Account | None = Depends(_optional_account),
+) -> dict:
+    _get_user(db, user_id, account)
     planner = WorkoutPlanner(db)
     return {"workout_plan": planner.serialize_plan(planner.current_plan(user_id))}
 
 
 @app.post("/api/users/{user_id}/workouts/logs")
-def log_workout(user_id: int, payload: schemas.WorkoutLogCreate, db: Session = Depends(get_db)) -> dict:
-    _get_user(db, user_id)
+def log_workout(
+    user_id: int,
+    payload: schemas.WorkoutLogCreate,
+    db: Session = Depends(get_db),
+    account: models.Account | None = Depends(_optional_account),
+) -> dict:
+    _get_user(db, user_id, account)
     log = models.WorkoutLog(user_id=user_id, **payload.model_dump())
     db.add(log)
     db.commit()
@@ -128,8 +208,13 @@ def log_workout(user_id: int, payload: schemas.WorkoutLogCreate, db: Session = D
 
 
 @app.post("/api/users/{user_id}/feedback")
-def submit_feedback(user_id: int, payload: schemas.FeedbackCreate, db: Session = Depends(get_db)) -> dict:
-    _get_user(db, user_id)
+def submit_feedback(
+    user_id: int,
+    payload: schemas.FeedbackCreate,
+    db: Session = Depends(get_db),
+    account: models.Account | None = Depends(_optional_account),
+) -> dict:
+    _get_user(db, user_id, account)
     feedback = models.Feedback(user_id=user_id, signal=payload.signal, message=payload.message)
     db.add(feedback)
     db.commit()
@@ -141,22 +226,34 @@ def submit_feedback(user_id: int, payload: schemas.FeedbackCreate, db: Session =
 
 
 @app.get("/api/users/{user_id}/diet/current")
-def current_diet(user_id: int, db: Session = Depends(get_db)) -> dict:
-    _get_user(db, user_id)
+def current_diet(
+    user_id: int,
+    db: Session = Depends(get_db),
+    account: models.Account | None = Depends(_optional_account),
+) -> dict:
+    _get_user(db, user_id, account)
     planner = DietPlanner(db)
     return {"diet_plan": planner.serialize_plan(planner.current_plan(user_id))}
 
 
 @app.post("/api/users/{user_id}/weekly-review")
-def create_weekly_review(user_id: int, db: Session = Depends(get_db)) -> dict:
-    user = _get_user(db, user_id)
+def create_weekly_review(
+    user_id: int,
+    db: Session = Depends(get_db),
+    account: models.Account | None = Depends(_optional_account),
+) -> dict:
+    user = _get_user(db, user_id, account)
     review_service = WeeklyReviewService(db)
     return {"weekly_summary": review_service.serialize_review(review_service.create_review(user))}
 
 
 @app.get("/api/users/{user_id}/report/export", response_class=PlainTextResponse)
-def export_report(user_id: int, db: Session = Depends(get_db)) -> str:
-    data = dashboard(user_id, db)
+def export_report(
+    user_id: int,
+    db: Session = Depends(get_db),
+    account: models.Account | None = Depends(_optional_account),
+) -> str:
+    data = dashboard(user_id, db, account)
     review = data["weekly_summary"] or {}
     progress = data["progress"]
     diet = data["current_diet_plan"] or {}
@@ -174,16 +271,19 @@ def export_report(user_id: int, db: Session = Depends(get_db)) -> str:
     )
 
 
-def _get_user(db: Session, user_id: int) -> models.UserProfile:
+def _get_user(db: Session, user_id: int, account: models.Account | None = None) -> models.UserProfile:
     user = db.get(models.UserProfile, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+    if user.account_id is not None and (account is None or user.account_id != account.id):
+        raise HTTPException(status_code=403, detail="Profile belongs to another account")
     return user
 
 
 def _user_dict(user: models.UserProfile) -> dict:
     return {
         "id": user.id,
+        "account_id": user.account_id,
         "name": user.name,
         "age": user.age,
         "height_cm": user.height_cm,

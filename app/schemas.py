@@ -19,9 +19,27 @@ class UserProfileCreate(BaseModel):
 
 class UserProfileOut(UserProfileCreate):
     id: int
+    account_id: int | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class AccountSignup(BaseModel):
+    email: str
+    password: str = Field(min_length=8, max_length=128)
+    profile: UserProfileCreate
+
+
+class AccountLogin(BaseModel):
+    email: str
+    password: str
+
+
+class AuthOut(BaseModel):
+    token: str
+    account: dict[str, Any]
+    profile: dict[str, Any] | None = None
 
 
 class WorkoutLogCreate(BaseModel):

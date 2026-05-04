@@ -77,6 +77,17 @@ set OPENAI_API_KEY=your_key_here
 set LLM_MODEL=gpt-4o-mini
 ```
 
+## Accounts
+
+FitGen AI supports lightweight local accounts:
+
+- Signup creates an account plus the first training profile.
+- Passwords are stored with PBKDF2-SHA256 hashes, not plaintext.
+- Browser sessions use bearer tokens stored in `localStorage`.
+- Demo mode remains available and creates an unowned local profile for testing.
+
+This is suitable for a product prototype. Before public deployment, add token expiry, refresh/revocation policy, HTTPS-only hosting, and stronger account recovery flows.
+
 ## API Highlights
 
 - `GET /api/bootstrap` creates and returns a demo user

@@ -26,4 +26,5 @@ Write-Host "Starting FitGen AI on http://127.0.0.1:$Port"
 Write-Host "Keep this PowerShell window open while using the app."
 Write-Host ""
 
+& $Python -m alembic upgrade head
 & $Python -m uvicorn app.main:app --app-dir $ProjectRoot --host 127.0.0.1 --port $Port --reload

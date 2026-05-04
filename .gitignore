@@ -3,7 +3,7 @@ __pycache__/
 .pytest_cache/
 .env
 fitgen.db
-fitgen_migration_test.db
+fitgen_*_test.db
 *.log
 .venv/
 venv/

@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from enum import Enum
 
-from sqlalchemy import Date, DateTime, Float, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Date, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -32,10 +32,35 @@ class FeedbackSignal(str, Enum):
     good = "good"
 
 
-class UserProfile(Base):
-    __tablename__ = "user_profiles"
+class Account(Base):
+    __tablename__ = "accounts"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    email: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    profiles: Mapped[list["UserProfile"]] = relationship(back_populates="account")
+    sessions: Mapped[list["AccountSession"]] = relationship(back_populates="account", cascade="all, delete-orphan")
+
+
+class AccountSession(Base):
+    __tablename__ = "account_sessions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), index=True)
+    token: Mapped[str] = mapped_column(String(128), nullable=False, unique=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    account: Mapped[Account] = relationship(back_populates="sessions")
+
+
+class UserProfile(Base):
+    __tablename__ = "user_profiles"
+    __table_args__ = (UniqueConstraint("account_id", "name", name="uq_user_profiles_account_name"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"), nullable=True, index=True)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     age: Mapped[int] = mapped_column(Integer, nullable=False)
     height_cm: Mapped[float] = mapped_column(Float, nullable=False)
@@ -48,6 +73,7 @@ class UserProfile(Base):
     gym_type: Mapped[str] = mapped_column(String(40), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
+    account: Mapped[Account | None] = relationship(back_populates="profiles")
     workout_plans: Mapped[list["WorkoutPlan"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     workout_logs: Mapped[list["WorkoutLog"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     feedback: Mapped[list["Feedback"]] = relationship(back_populates="user", cascade="all, delete-orphan")
