@@ -194,10 +194,44 @@
           <div class="topbar">
             <div>
               <p class="eyebrow">Training</p>
-              <h2>Current weekly plan</h2>
+              <h2 id="workoutTitle">Current weekly plan</h2>
             </div>
           </div>
-          <div id="workoutPlan" class="day-grid"></div>
+          <div class="session-layout">
+            <article class="panel session-panel">
+              <header>
+                <h3>Session flow</h3>
+                <span id="sessionMeta">Choose a training day</span>
+              </header>
+              <div id="daySelector" class="day-selector"></div>
+              <div id="sessionSummary" class="session-summary"></div>
+              <div id="selectedDayPlan" class="selected-day-plan"></div>
+              <div class="session-footer">
+                <button id="finishSessionBtn" class="primary" type="button">Finish session</button>
+                <p id="finishSessionMessage" class="muted"></p>
+              </div>
+            </article>
+            <article class="panel session-notes">
+              <header>
+                <h3>Session cues</h3>
+                <span>Use this to move cleanly</span>
+              </header>
+              <div class="cue-list">
+                <div class="cue-item">
+                  <strong>1. Pick today</strong>
+                  <span>Open the day you are actually training.</span>
+                </div>
+                <div class="cue-item">
+                  <strong>2. Load an exercise</strong>
+                  <span>Tap a planned lift to push it into the log form.</span>
+                </div>
+                <div class="cue-item">
+                  <strong>3. Log honestly</strong>
+                  <span>Completion, effort, and missed lifts all affect next week’s plan.</span>
+                </div>
+              </div>
+            </article>
+          </div>
           <article class="panel log-panel">
             <header>
               <h3>Log performance</h3>

@@ -103,6 +103,7 @@ class WorkoutPlanner:
     def serialize_plan(self, plan: models.WorkoutPlan | None) -> dict | None:
         if not plan:
             return None
+        exercise_statuses = self._exercise_statuses(plan)
         days: dict[int, dict] = {}
         for exercise in sorted(plan.exercises, key=lambda item: (item.day_index, item.id)):
             days.setdefault(
@@ -118,6 +119,8 @@ class WorkoutPlanner:
                     "target_reps": exercise.target_reps,
                     "target_weight_kg": exercise.target_weight_kg,
                     "notes": exercise.notes,
+                    "status": exercise_statuses.get(exercise.id, {}).get("status", "pending"),
+                    "last_log": exercise_statuses.get(exercise.id),
                 }
             )
         return {
@@ -183,16 +186,38 @@ class WorkoutPlanner:
     def _linked_completion_metrics(self, plan: models.WorkoutPlan | None) -> dict[str, float]:
         if not plan or not plan.exercises:
             return {"completed": 0, "total": 0, "completion_rate": 0}
+        statuses = self._exercise_statuses(plan)
+        completed_ids = {exercise_id for exercise_id, status in statuses.items() if status["status"] == "completed"}
         exercise_ids = [exercise.id for exercise in plan.exercises]
-        logs = (
-            self.db.query(models.WorkoutLog)
-            .filter(models.WorkoutLog.planned_exercise_id.in_(exercise_ids))
-            .all()
-        )
-        completed_ids = {log.planned_exercise_id for log in logs if log.completed and log.planned_exercise_id is not None}
         total = len(exercise_ids)
         completed = len(completed_ids)
         return {"completed": completed, "total": total, "completion_rate": completed / total if total else 0}
+
+    def _exercise_statuses(self, plan: models.WorkoutPlan) -> dict[int, dict]:
+        exercise_ids = [exercise.id for exercise in plan.exercises]
+        if not exercise_ids:
+            return {}
+        logs = (
+            self.db.query(models.WorkoutLog)
+            .filter(models.WorkoutLog.planned_exercise_id.in_(exercise_ids))
+            .order_by(models.WorkoutLog.id.desc())
+            .all()
+        )
+        latest_by_exercise: dict[int, models.WorkoutLog] = {}
+        for log in logs:
+            if log.planned_exercise_id is not None and log.planned_exercise_id not in latest_by_exercise:
+                latest_by_exercise[log.planned_exercise_id] = log
+        return {
+            exercise_id: {
+                "status": "completed" if log.completed else "skipped",
+                "performed_on": log.performed_on.isoformat(),
+                "sets_completed": log.sets_completed,
+                "reps_completed": log.reps_completed,
+                "weight_kg": log.weight_kg,
+                "effort": log.perceived_effort,
+            }
+            for exercise_id, log in latest_by_exercise.items()
+        }
 
     def _intensity_modifier(self, user: models.UserProfile, metrics: dict) -> tuple[float, str]:
         modifier = 1.0

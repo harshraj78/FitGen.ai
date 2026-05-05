@@ -320,13 +320,12 @@ def _progress(db: Session, user_id: int) -> dict:
     completed = sum(1 for log in logs if log.completed)
     planned_total = len(current_plan.exercises) if current_plan else 0
     planned_exercise_ids = {exercise.id for exercise in current_plan.exercises} if current_plan else set()
-    planned_completed = len(
-        {
-            log.planned_exercise_id
-            for log in logs
-            if log.completed and log.planned_exercise_id is not None and log.planned_exercise_id in planned_exercise_ids
-        }
-    )
+    latest_by_planned_exercise: dict[int, models.WorkoutLog] = {}
+    for log in sorted(logs, key=lambda item: item.id, reverse=True):
+        if log.planned_exercise_id is not None and log.planned_exercise_id in planned_exercise_ids and log.planned_exercise_id not in latest_by_planned_exercise:
+            latest_by_planned_exercise[log.planned_exercise_id] = log
+    planned_completed = len([log for log in latest_by_planned_exercise.values() if log.completed])
+    planned_skipped = len([log for log in latest_by_planned_exercise.values() if not log.completed])
     by_exercise: dict[str, float] = {}
     chart = []
     for log in logs:
@@ -344,6 +343,7 @@ def _progress(db: Session, user_id: int) -> dict:
         "completion_rate": planned_completed / planned_total if planned_total else (completed / total if total else 0),
         "current_week_completed": planned_completed,
         "current_week_planned": planned_total,
+        "current_week_skipped": planned_skipped,
         "best_weights": by_exercise,
         "chart": chart[-30:],
         "recent_logs": [

@@ -241,6 +241,213 @@ canvas {
   gap: 14px;
 }
 
+.session-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(260px, 0.75fr);
+  gap: 16px;
+}
+
+.session-panel,
+.session-notes {
+  min-height: 100%;
+}
+
+.day-selector {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.day-pill {
+  min-height: 52px;
+  padding: 10px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8f5ef;
+  text-align: left;
+}
+
+.day-pill strong,
+.day-pill span {
+  display: block;
+}
+
+.day-pill strong {
+  font-size: 14px;
+}
+
+.day-pill span {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+.day-pill.active {
+  background: var(--soft);
+  border-color: #bfd4cc;
+}
+
+.selected-day-plan {
+  display: grid;
+  gap: 12px;
+}
+
+.session-summary {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.session-summary-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: #fbfaf6;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.session-summary-chip.done {
+  background: #e6efe9;
+  border-color: #bfd4cc;
+  color: var(--accent);
+}
+
+.session-summary-chip.skipped {
+  background: #fff4dc;
+  border-color: #efd28a;
+  color: #6f4b00;
+}
+
+.session-day-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
+.session-day-head p {
+  margin-bottom: 0;
+}
+
+.session-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: #fff4dc;
+  border: 1px solid #efd28a;
+  color: #6f4b00;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.session-exercise {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 14px;
+  background: #fff;
+}
+
+.session-exercise-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.session-exercise-top p {
+  margin-bottom: 0;
+}
+
+.session-exercise-meta {
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.session-exercise-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+
+.session-exercise-actions button {
+  min-height: 34px;
+}
+
+.session-status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: #fbfaf6;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.session-status.completed {
+  background: #e6efe9;
+  border-color: #bfd4cc;
+  color: var(--accent);
+}
+
+.session-status.skipped {
+  background: #fff4dc;
+  border-color: #efd28a;
+  color: #6f4b00;
+}
+
+.session-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.session-footer button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.cue-list {
+  display: grid;
+  gap: 12px;
+}
+
+.cue-item {
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+
+.cue-item:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.cue-item strong,
+.cue-item span {
+  display: block;
+}
+
+.cue-item span {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
 .day,
 .meal {
   padding: 16px;
@@ -585,6 +792,7 @@ textarea {
   }
 
   .main-grid,
+  .session-layout,
   .day-grid,
   .meal-grid {
     grid-template-columns: 1fr;
@@ -617,6 +825,7 @@ textarea {
   }
 
   .tabs,
+  .day-selector,
   .stats-grid,
   .form-grid,
   .profile-grid,

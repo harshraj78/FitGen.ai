@@ -1,6 +1,7 @@
 let state = null;
 const ACTIVE_USER_KEY = "fitgen-active-user-id";
 const AUTH_TOKEN_KEY = "fitgen-auth-token";
+let selectedWorkoutDayIndex = null;
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
@@ -118,46 +119,96 @@ function renderStats() {
 function renderWorkout() {
   const plan = state.current_workout_plan;
   if (!plan) {
-    $("#workoutPlan").innerHTML = "<p>No workout plan yet.</p>";
+    $("#daySelector").innerHTML = "<p>No workout plan yet.</p>";
+    $("#sessionSummary").innerHTML = "";
+    $("#selectedDayPlan").innerHTML = "";
+    $("#finishSessionMessage").textContent = "";
     return;
   }
-  $("#workoutPlan").innerHTML = plan.days
+  if (!selectedWorkoutDayIndex || !plan.days.some((day, index) => index + 1 === selectedWorkoutDayIndex)) {
+    selectedWorkoutDayIndex = pickWorkoutDay(plan.days);
+  }
+  const selectedDay = plan.days[selectedWorkoutDayIndex - 1];
+  const dayStatuses = summarizeDay(selectedDay);
+  $("#workoutTitle").textContent = plan.title;
+  $("#sessionMeta").textContent = `${selectedDay.day} | ${selectedDay.exercises.length} planned exercises`;
+  $("#sessionSummary").innerHTML = `
+    <span class="session-summary-chip done">${dayStatuses.completed} done</span>
+    <span class="session-summary-chip skipped">${dayStatuses.skipped} skipped</span>
+    <span class="session-summary-chip">${dayStatuses.pending} pending</span>
+  `;
+  $("#daySelector").innerHTML = plan.days
     .map(
-      (day) => `
-      <article class="day">
-        <h3>${day.day} | ${day.focus}</h3>
-        ${day.exercises
-          .map(
-            (exercise) => `
-            <div class="exercise">
-              <strong>${exercise.name}</strong>
-              <span>${exercise.sets} sets x ${exercise.target_reps} reps | ${exercise.target_weight_kg || "bodyweight"} kg</span>
-              <span>${exercise.equipment} | ${exercise.notes}</span>
-              <div class="exercise-actions">
-                <button type="button" data-exercise-id="${exercise.id}" data-exercise-name="${exercise.name}">Use in log</button>
-              </div>
-            </div>
-          `,
-          )
-          .join("")}
-      </article>
+      (day, index) => `
+      <button type="button" class="day-pill ${selectedWorkoutDayIndex === index + 1 ? "active" : ""}" data-day-index="${index + 1}">
+        <strong>${day.day}</strong>
+        <span>${day.focus}</span>
+      </button>
     `,
     )
     .join("");
+  $("#selectedDayPlan").innerHTML = `
+    <div class="session-day-head">
+      <div>
+        <h3>${selectedDay.day}</h3>
+        <p class="muted">${selectedDay.focus}</p>
+      </div>
+      <span class="session-badge">${selectedDay.exercises.length} lifts queued</span>
+    </div>
+    ${selectedDay.exercises
+      .map(
+        (exercise) => `
+        <article class="session-exercise">
+          <div class="session-exercise-top">
+            <div>
+              <strong>${exercise.name}</strong>
+              <p class="session-exercise-meta">${exercise.sets} sets x ${exercise.target_reps} reps | ${exercise.target_weight_kg || "bodyweight"} kg</p>
+            </div>
+            <div>
+              <span class="budget">${exercise.equipment}</span>
+              <span class="session-status ${exercise.status}">${labelExerciseStatus(exercise.status)}</span>
+            </div>
+          </div>
+          <p class="session-exercise-meta">${exercise.notes}</p>
+          <div class="session-exercise-actions">
+            <button type="button" data-exercise-id="${exercise.id}" data-exercise-name="${exercise.name}" data-target-weight="${exercise.target_weight_kg || 0}">Log this lift</button>
+            <button type="button" data-skip-exercise-id="${exercise.id}" data-skip-exercise-name="${exercise.name}">Mark skipped</button>
+          </div>
+        </article>
+      `,
+      )
+      .join("")}
+  `;
+  $$(".day-pill").forEach((button) => {
+    button.addEventListener("click", () => {
+      selectedWorkoutDayIndex = Number(button.dataset.dayIndex);
+      renderWorkout();
+    });
+  });
+  $$(".session-exercise-actions button").forEach((button) => {
+    if (button.dataset.exerciseId) {
+      button.addEventListener("click", () => {
+        loadExerciseIntoLog(button.dataset.exerciseId, button.dataset.exerciseName, button.dataset.targetWeight);
+      });
+    }
+    if (button.dataset.skipExerciseId) {
+      button.addEventListener("click", async () => {
+        await markExerciseSkipped(button.dataset.skipExerciseId, button.dataset.skipExerciseName);
+      });
+    }
+  });
+  const finishButton = $("#finishSessionBtn");
+  const allResolved = dayStatuses.pending === 0 && selectedDay.exercises.length > 0;
+  finishButton.disabled = !allResolved;
+  $("#finishSessionMessage").textContent = allResolved
+    ? sessionMessage(dayStatuses)
+    : "Finish session unlocks when each planned lift is logged or skipped.";
 
   const firstExercise = plan.days[0]?.exercises[0]?.name;
   if (firstExercise && !$("input[name='exercise_name']").value) {
     $("input[name='exercise_name']").value = firstExercise;
   }
   $("input[name='performed_on']").valueAsDate = new Date();
-  $$(".exercise-actions button").forEach((button) => {
-    button.addEventListener("click", () => {
-      $("input[name='planned_exercise_id']").value = button.dataset.exerciseId;
-      $("input[name='exercise_name']").value = button.dataset.exerciseName;
-      $("#selectedExercise").textContent = `Logging planned exercise: ${button.dataset.exerciseName}`;
-      document.querySelector("#logForm").scrollIntoView({ behavior: "smooth", block: "center" });
-    });
-  });
 }
 
 function renderDiet() {
@@ -252,6 +303,59 @@ function drawVolumeChart() {
 
 function label(value) {
   return String(value).replaceAll("_", " ");
+}
+
+function labelExerciseStatus(status) {
+  return { completed: "Done", skipped: "Skipped", pending: "Pending" }[status] || "Pending";
+}
+
+function pickWorkoutDay(days) {
+  const today = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][new Date().getDay()];
+  const matchIndex = days.findIndex((day) => day.day === today);
+  return matchIndex >= 0 ? matchIndex + 1 : 1;
+}
+
+function loadExerciseIntoLog(exerciseId, exerciseName, targetWeight) {
+  $("input[name='planned_exercise_id']").value = exerciseId;
+  $("input[name='exercise_name']").value = exerciseName;
+  $("input[name='weight_kg']").value = Number(targetWeight || 0);
+  $("#selectedExercise").textContent = `Logging planned exercise: ${exerciseName}`;
+  document.querySelector("#logForm").scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
+function summarizeDay(day) {
+  return day.exercises.reduce(
+    (summary, exercise) => {
+      summary[exercise.status] += 1;
+      return summary;
+    },
+    { completed: 0, skipped: 0, pending: 0 },
+  );
+}
+
+function sessionMessage(summary) {
+  if (summary.skipped > 0) {
+    return `${summary.completed} completed, ${summary.skipped} skipped. That will shape the next plan.`;
+  }
+  return `Session complete. ${summary.completed} planned lifts finished cleanly.`;
+}
+
+async function markExerciseSkipped(exerciseId, exerciseName) {
+  await api(`/api/users/${state.user.id}/workouts/logs`, {
+    method: "POST",
+    body: JSON.stringify({
+      planned_exercise_id: Number(exerciseId),
+      exercise_name: exerciseName,
+      performed_on: state.current_workout_plan.week_start,
+      sets_completed: 0,
+      reps_completed: 0,
+      weight_kg: 0,
+      completed: false,
+      perceived_effort: 3,
+    }),
+  });
+  state = await api(`/api/users/${state.user.id}/dashboard`);
+  render();
 }
 
 function setAuthMode(mode) {
@@ -434,6 +538,12 @@ $("#logForm").addEventListener("submit", async (event) => {
   $("#selectedExercise").textContent = "";
   state = await api(`/api/users/${state.user.id}/dashboard`);
   render();
+});
+
+$("#finishSessionBtn").addEventListener("click", () => {
+  const day = state.current_workout_plan.days[selectedWorkoutDayIndex - 1];
+  const summary = summarizeDay(day);
+  $("#finishSessionMessage").textContent = sessionMessage(summary);
 });
 
 $$(".feedback-buttons button").forEach((button) => {

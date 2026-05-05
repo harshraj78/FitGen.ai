@@ -100,7 +100,11 @@ class WeeklyReviewService:
 
     def _completion_rate(self, logs: list[models.WorkoutLog], plan: models.WorkoutPlan | None) -> float:
         if plan and plan.exercises:
-            completed_ids = {log.planned_exercise_id for log in logs if log.completed and log.planned_exercise_id is not None}
+            latest_by_exercise: dict[int, models.WorkoutLog] = {}
+            for log in sorted(logs, key=lambda item: item.id, reverse=True):
+                if log.planned_exercise_id is not None and log.planned_exercise_id not in latest_by_exercise:
+                    latest_by_exercise[log.planned_exercise_id] = log
+            completed_ids = {exercise_id for exercise_id, log in latest_by_exercise.items() if log.completed}
             return len(completed_ids) / len(plan.exercises)
         return sum(1 for log in logs if log.completed) / len(logs) if logs else 0
 
