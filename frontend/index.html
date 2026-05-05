@@ -10,77 +10,112 @@
     <section class="onboarding active" id="onboarding">
       <div class="onboarding-copy">
         <p class="eyebrow">FitGen AI</p>
-        <h1>Build a plan from your real constraints</h1>
+        <h1>Train with a plan that knows your constraints.</h1>
         <p>
-          Create a profile once. FitGen AI will generate your first workout and diet plan, then keep adapting from
-          your logs and feedback.
+          FitGen AI adapts training and nutrition from your budget, equipment, location, performance, and feedback.
         </p>
-        <button id="demoBtn">Load demo profile</button>
+        <div class="feature-list">
+          <div class="feature-chip">Adaptive weekly plans</div>
+          <div class="feature-chip">India-friendly meals</div>
+          <div class="feature-chip">Progress-aware reviews</div>
+        </div>
+        <div class="demo-card">
+          <strong>Need a quick look?</strong>
+          <p>Open the seeded account and inspect the dashboard without creating anything.</p>
+          <button id="demoBtn">Load demo profile</button>
+        </div>
       </div>
 
       <form id="profileForm" class="onboarding-form">
-        <div class="form-header">
-          <h2>Create account</h2>
-          <p class="muted">Your account owns the profile, logs, feedback, and generated plans.</p>
+        <div class="auth-switch" aria-label="Auth mode">
+          <button type="button" class="auth-tab active" data-auth-mode="signup">Create account</button>
+          <button type="button" class="auth-tab" data-auth-mode="login">Log in</button>
         </div>
-        <div class="form-grid auth-grid">
-          <label>Email<input name="email" type="email" required placeholder="you@example.com" /></label>
-          <label>Password<input name="password" type="password" minlength="8" required placeholder="8+ characters" /></label>
-        </div>
-        <div class="section-divider"></div>
-        <p class="eyebrow">Training profile</p>
-        <div class="form-grid profile-grid">
-          <label>Name<input name="name" required placeholder="Your name" /></label>
-          <label>Age<input name="age" type="number" min="13" max="90" value="25" required /></label>
-          <label>Height cm<input name="height_cm" type="number" min="101" max="229" value="174" required /></label>
-          <label>Weight kg<input name="weight_kg" type="number" min="31" max="249" step="0.1" value="75" required /></label>
-          <label>
-            Goal
-            <select name="fitness_goal" required>
-              <option value="fat_loss">Fat loss</option>
-              <option value="muscle_gain">Muscle gain</option>
-              <option value="maintenance">Maintenance</option>
-            </select>
-          </label>
-          <label>
-            Diet
-            <select name="diet_preference" required>
-              <option value="veg">Veg</option>
-              <option value="non_veg">Non-veg</option>
-            </select>
-          </label>
-          <label>Budget<input name="budget_amount" type="number" min="1" value="220" required /></label>
-          <label>
-            Period
-            <select name="budget_period" required>
-              <option value="daily">Daily</option>
-              <option value="weekly">Weekly</option>
-            </select>
-          </label>
-          <label>Location<input name="location" required placeholder="Pune, India" /></label>
-          <label>
-            Gym type
-            <select name="gym_type" required>
-              <option value="home">Home</option>
-              <option value="local_gym">Local gym</option>
-              <option value="premium_gym">Premium gym</option>
-            </select>
-          </label>
-        </div>
-        <button class="primary" type="submit">Create adaptive plan</button>
-        <p id="onboardingError" class="error"></p>
 
-        <div class="section-divider"></div>
-        <div class="form-header compact">
-          <h2>Log in</h2>
-          <p class="muted">Return to an existing FitGen AI account.</p>
+        <div class="auth-mode active" data-auth-panel="signup">
+          <div class="form-header">
+            <h2>Create account</h2>
+            <p class="muted">One account, one training profile to start. You can expand later.</p>
+          </div>
+          <div class="signup-step active" data-signup-step="account">
+            <div class="form-grid auth-grid">
+              <label>Email<input name="email" type="email" required placeholder="you@example.com" /></label>
+              <label>Password<input name="password" type="password" minlength="8" required placeholder="8+ characters" /></label>
+            </div>
+            <button id="signupContinueBtn" class="primary auth-submit" type="button">Continue</button>
+          </div>
+          <div class="signup-step" data-signup-step="profile">
+            <div class="step-back-row">
+              <button id="signupBackBtn" class="secondary-link" type="button">Back</button>
+              <span class="muted">Profile details</span>
+            </div>
+            <div class="account-preview" id="accountPreview"></div>
+            <input name="email_confirm" type="hidden" />
+            <input name="password_confirm" type="hidden" />
+            <div class="profile-block">
+              <div class="profile-block-head">
+                <p class="eyebrow">Training profile</p>
+                <span class="muted">Used for plans, meals, and adaptation.</span>
+              </div>
+              <div class="profile-grid">
+                <label>Name<input name="name" required placeholder="Your name" /></label>
+                <label>Age<input name="age" type="number" min="13" max="90" value="25" required /></label>
+                <label>Height cm<input name="height_cm" type="number" min="101" max="229" value="174" required /></label>
+                <label>Weight kg<input name="weight_kg" type="number" min="31" max="249" step="0.1" value="75" required /></label>
+                <label>
+                  Goal
+                  <select name="fitness_goal" required>
+                    <option value="fat_loss">Fat loss</option>
+                    <option value="muscle_gain">Muscle gain</option>
+                    <option value="maintenance">Maintenance</option>
+                  </select>
+                </label>
+                <label>
+                  Diet
+                  <select name="diet_preference" required>
+                    <option value="veg">Veg</option>
+                    <option value="non_veg">Non-veg</option>
+                  </select>
+                </label>
+                <label>Budget<input name="budget_amount" type="number" min="1" value="220" required /></label>
+                <label>
+                  Period
+                  <select name="budget_period" required>
+                    <option value="daily">Daily</option>
+                    <option value="weekly">Weekly</option>
+                  </select>
+                </label>
+                <label>Location<input name="location" required placeholder="Pune, India" /></label>
+                <label>
+                  Gym type
+                  <select name="gym_type" required>
+                    <option value="home">Home</option>
+                    <option value="local_gym">Local gym</option>
+                    <option value="premium_gym">Premium gym</option>
+                  </select>
+                </label>
+              </div>
+            </div>
+            <button class="primary auth-submit" type="submit">Create adaptive plan</button>
+          </div>
+          <p id="onboardingError" class="error"></p>
         </div>
-        <div id="loginForm" class="form-grid auth-grid">
-          <label>Email<input name="login_email" type="email" placeholder="you@example.com" /></label>
-          <label>Password<input name="login_password" type="password" placeholder="Password" /></label>
-          <button id="loginBtn" type="button">Log in</button>
+
+        <div class="auth-mode" data-auth-panel="login">
+          <div class="form-header">
+            <h2>Welcome back</h2>
+            <p class="muted">Pick up your last profile, plan, and progress history.</p>
+          </div>
+          <div id="loginForm" class="form-grid auth-grid login-grid">
+            <label>Email<input name="login_email" type="email" placeholder="you@example.com" /></label>
+            <label>Password<input name="login_password" type="password" placeholder="Password" /></label>
+          </div>
+          <div class="login-note">
+            <span class="muted">Your training history, weekly reviews, and planned workout progress stay attached to this account.</span>
+          </div>
+          <button id="loginBtn" class="primary auth-submit" type="button">Log in</button>
+          <p id="loginError" class="error"></p>
         </div>
-        <p id="loginError" class="error"></p>
       </form>
     </section>
 

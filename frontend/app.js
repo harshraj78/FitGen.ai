@@ -254,6 +254,45 @@ function label(value) {
   return String(value).replaceAll("_", " ");
 }
 
+function setAuthMode(mode) {
+  $$(".auth-tab").forEach((button) => {
+    button.classList.toggle("active", button.dataset.authMode === mode);
+  });
+  $$("[data-auth-panel]").forEach((panel) => {
+    panel.classList.toggle("active", panel.dataset.authPanel === mode);
+  });
+  if (mode === "signup") {
+    setSignupStep("account");
+  }
+}
+
+function setSignupStep(step) {
+  $$("[data-signup-step]").forEach((panel) => {
+    panel.classList.toggle("active", panel.dataset.signupStep === step);
+  });
+}
+
+function validateSignupAccountStep() {
+  const emailInput = $("input[name='email']");
+  const passwordInput = $("input[name='password']");
+  if (!emailInput.value.trim()) {
+    throw new Error("Enter your email.");
+  }
+  if (!emailInput.checkValidity()) {
+    throw new Error("Enter a valid email address.");
+  }
+  if (!passwordInput.value || passwordInput.value.length < 8) {
+    throw new Error("Password must be at least 8 characters.");
+  }
+}
+
+function syncSignupPreview() {
+  const email = $("input[name='email']").value.trim();
+  $("input[name='email_confirm']").value = email;
+  $("input[name='password_confirm']").value = $("input[name='password']").value;
+  $("#accountPreview").textContent = `Account: ${email}`;
+}
+
 function profilePayload(form) {
   const payload = Object.fromEntries(new FormData(form).entries());
   return {
@@ -283,6 +322,28 @@ $$(".tab").forEach((button) => {
   });
 });
 
+$$(".auth-tab").forEach((button) => {
+  button.addEventListener("click", () => {
+    setAuthMode(button.dataset.authMode);
+  });
+});
+
+$("#signupContinueBtn").addEventListener("click", () => {
+  $("#onboardingError").textContent = "";
+  try {
+    validateSignupAccountStep();
+    syncSignupPreview();
+    setSignupStep("profile");
+  } catch (error) {
+    $("#onboardingError").textContent = error.message;
+  }
+});
+
+$("#signupBackBtn").addEventListener("click", () => {
+  $("#onboardingError").textContent = "";
+  setSignupStep("account");
+});
+
 $("#planBtn").addEventListener("click", async () => {
   await api(`/api/users/${state.user.id}/plans/weekly`, { method: "POST" });
   state = await api(`/api/users/${state.user.id}/dashboard`);
@@ -309,6 +370,7 @@ $("#profileForm").addEventListener("submit", async (event) => {
     showApp();
     render();
   } catch (error) {
+    setAuthMode("signup");
     $("#onboardingError").textContent = `Could not create account: ${error.message}`;
   }
 });
@@ -349,6 +411,7 @@ $("#loginBtn").addEventListener("click", async () => {
     showApp();
     render();
   } catch (error) {
+    setAuthMode("login");
     $("#loginError").textContent = error.message || "Invalid email or password.";
   }
 });
