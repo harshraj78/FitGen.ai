@@ -123,6 +123,10 @@
               <strong id="totalLogs">0</strong>
             </article>
             <article class="stat">
+              <span>Plan done</span>
+              <strong id="plannedCompletion">0/0</strong>
+            </article>
+            <article class="stat">
               <span>Calories</span>
               <strong id="calorieTarget">0</strong>
             </article>
@@ -166,6 +170,7 @@
             </header>
             <form id="logForm" class="form-grid">
               <label>Exercise<input name="exercise_name" required /></label>
+              <input name="planned_exercise_id" type="hidden" />
               <label>Date<input name="performed_on" type="date" required /></label>
               <label>Sets<input name="sets_completed" type="number" min="0" max="20" value="3" /></label>
               <label>Reps<input name="reps_completed" type="number" min="0" max="300" value="30" /></label>
@@ -174,6 +179,7 @@
               <label class="check"><input name="completed" type="checkbox" checked /> Completed</label>
               <button class="primary" type="submit">Save log</button>
             </form>
+            <p id="selectedExercise" class="muted"></p>
           </article>
         </section>
 

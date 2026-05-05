@@ -22,6 +22,12 @@ class WeeklyReviewService:
             )
             .all()
         )
+        current_plan = (
+            self.db.query(models.WorkoutPlan)
+            .filter(models.WorkoutPlan.user_id == user.id, models.WorkoutPlan.week_start == week_start)
+            .order_by(desc(models.WorkoutPlan.id))
+            .first()
+        )
         previous_logs = (
             self.db.query(models.WorkoutLog)
             .filter(
@@ -31,7 +37,7 @@ class WeeklyReviewService:
             )
             .all()
         )
-        completion_rate = sum(1 for log in logs if log.completed) / len(logs) if logs else 0
+        completion_rate = self._completion_rate(logs, current_plan)
         strength_delta = self._strength_delta(previous_logs, logs)
         weak_lift = self._weakest_lift(logs)
 
@@ -91,6 +97,12 @@ class WeeklyReviewService:
     def _average_load(self, logs: list[models.WorkoutLog]) -> float:
         weighted = [log.weight_kg * max(log.reps_completed, 1) for log in logs if log.completed]
         return sum(weighted) / len(weighted) if weighted else 0
+
+    def _completion_rate(self, logs: list[models.WorkoutLog], plan: models.WorkoutPlan | None) -> float:
+        if plan and plan.exercises:
+            completed_ids = {log.planned_exercise_id for log in logs if log.completed and log.planned_exercise_id is not None}
+            return len(completed_ids) / len(plan.exercises)
+        return sum(1 for log in logs if log.completed) / len(logs) if logs else 0
 
     def _weakest_lift(self, logs: list[models.WorkoutLog]) -> str:
         if not logs:

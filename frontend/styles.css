@@ -260,6 +260,17 @@ canvas {
   display: block;
 }
 
+.exercise-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.exercise-actions button {
+  min-height: 34px;
+  padding: 0 10px;
+}
+
 .exercise span,
 .meal li,
 .recent-log {

@@ -126,6 +126,7 @@ class WorkoutPlanner:
             "title": plan.title,
             "intensity_modifier": plan.intensity_modifier,
             "rationale": plan.rationale,
+            "planned_exercise_count": len(plan.exercises),
             "days": list(days.values()),
         }
 
@@ -159,6 +160,8 @@ class WorkoutPlanner:
             .limit(10)
             .all()
         )
+        current_plan = self.current_plan(user_id)
+        linked_completion = self._linked_completion_metrics(current_plan)
 
         best_weight_by_exercise: dict[str, float] = defaultdict(float)
         completed = 0
@@ -171,11 +174,25 @@ class WorkoutPlanner:
             best_weight_by_exercise[log.exercise_name] = max(best_weight_by_exercise[log.exercise_name], log.weight_kg)
 
         return {
-            "completion_rate": completed / total if total else 1,
+            "completion_rate": linked_completion["completion_rate"] if linked_completion["total"] else (completed / total if total else 1),
             "average_effort": effort_total / total if total else 7,
             "best_weight_by_exercise": dict(best_weight_by_exercise),
             "recent_feedback": [item.signal for item in feedback],
         }
+
+    def _linked_completion_metrics(self, plan: models.WorkoutPlan | None) -> dict[str, float]:
+        if not plan or not plan.exercises:
+            return {"completed": 0, "total": 0, "completion_rate": 0}
+        exercise_ids = [exercise.id for exercise in plan.exercises]
+        logs = (
+            self.db.query(models.WorkoutLog)
+            .filter(models.WorkoutLog.planned_exercise_id.in_(exercise_ids))
+            .all()
+        )
+        completed_ids = {log.planned_exercise_id for log in logs if log.completed and log.planned_exercise_id is not None}
+        total = len(exercise_ids)
+        completed = len(completed_ids)
+        return {"completed": completed, "total": total, "completion_rate": completed / total if total else 0}
 
     def _intensity_modifier(self, user: models.UserProfile, metrics: dict) -> tuple[float, str]:
         modifier = 1.0

@@ -119,6 +119,7 @@ class WorkoutLog(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("user_profiles.id"), index=True)
+    planned_exercise_id: Mapped[int | None] = mapped_column(ForeignKey("workout_exercises.id"), nullable=True, index=True)
     exercise_name: Mapped[str] = mapped_column(String(140), nullable=False)
     performed_on: Mapped[date] = mapped_column(Date, nullable=False)
     sets_completed: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -129,6 +130,7 @@ class WorkoutLog(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     user: Mapped[UserProfile] = relationship(back_populates="workout_logs")
+    planned_exercise: Mapped["WorkoutExercise | None"] = relationship()
 
 
 class Feedback(Base):

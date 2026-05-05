@@ -85,6 +85,7 @@ FitGen AI supports lightweight local accounts:
 - Passwords are stored with PBKDF2-SHA256 hashes, not plaintext.
 - Browser sessions use bearer tokens stored in `localStorage`.
 - Demo mode remains available and creates an unowned local profile for testing.
+- Workout logs can be attached directly to planned exercises, so weekly completion and replanning are based on the actual schedule.
 
 This is suitable for a product prototype. Before public deployment, add token expiry, refresh/revocation policy, HTTPS-only hosting, and stronger account recovery flows.
 

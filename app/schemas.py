@@ -43,6 +43,7 @@ class AuthOut(BaseModel):
 
 
 class WorkoutLogCreate(BaseModel):
+    planned_exercise_id: int | None = None
     exercise_name: str
     performed_on: date
     sets_completed: int = Field(ge=0, le=20)

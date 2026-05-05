@@ -200,6 +200,12 @@ def log_workout(
     account: models.Account | None = Depends(_optional_account),
 ) -> dict:
     _get_user(db, user_id, account)
+    if payload.planned_exercise_id is not None:
+        planned_exercise = db.get(models.WorkoutExercise, payload.planned_exercise_id)
+        if not planned_exercise or planned_exercise.plan.user_id != user_id:
+            raise HTTPException(status_code=400, detail="Planned exercise does not belong to this user")
+    else:
+        planned_exercise = None
     log = models.WorkoutLog(user_id=user_id, **payload.model_dump())
     db.add(log)
     db.commit()
@@ -298,6 +304,12 @@ def _user_dict(user: models.UserProfile) -> dict:
 
 
 def _progress(db: Session, user_id: int) -> dict:
+    current_plan = (
+        db.query(models.WorkoutPlan)
+        .filter(models.WorkoutPlan.user_id == user_id)
+        .order_by(desc(models.WorkoutPlan.week_start), desc(models.WorkoutPlan.id))
+        .first()
+    )
     logs = (
         db.query(models.WorkoutLog)
         .filter(models.WorkoutLog.user_id == user_id)
@@ -306,6 +318,15 @@ def _progress(db: Session, user_id: int) -> dict:
     )
     total = len(logs)
     completed = sum(1 for log in logs if log.completed)
+    planned_total = len(current_plan.exercises) if current_plan else 0
+    planned_exercise_ids = {exercise.id for exercise in current_plan.exercises} if current_plan else set()
+    planned_completed = len(
+        {
+            log.planned_exercise_id
+            for log in logs
+            if log.completed and log.planned_exercise_id is not None and log.planned_exercise_id in planned_exercise_ids
+        }
+    )
     by_exercise: dict[str, float] = {}
     chart = []
     for log in logs:
@@ -320,11 +341,14 @@ def _progress(db: Session, user_id: int) -> dict:
         )
     return {
         "total_logs": total,
-        "completion_rate": completed / total if total else 0,
+        "completion_rate": planned_completed / planned_total if planned_total else (completed / total if total else 0),
+        "current_week_completed": planned_completed,
+        "current_week_planned": planned_total,
         "best_weights": by_exercise,
         "chart": chart[-30:],
         "recent_logs": [
             {
+                "planned_exercise_id": log.planned_exercise_id,
                 "exercise": log.exercise_name,
                 "date": log.performed_on.isoformat(),
                 "sets": log.sets_completed,

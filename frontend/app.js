@@ -110,6 +110,7 @@ function renderStats() {
   const diet = state.current_diet_plan || {};
   $("#completionRate").textContent = `${Math.round((progress.completion_rate || 0) * 100)}%`;
   $("#totalLogs").textContent = progress.total_logs;
+  $("#plannedCompletion").textContent = `${progress.current_week_completed || 0}/${progress.current_week_planned || 0}`;
   $("#calorieTarget").textContent = diet.calories || 0;
   $("#proteinTarget").textContent = `${diet.protein_g || 0}g`;
 }
@@ -132,6 +133,9 @@ function renderWorkout() {
               <strong>${exercise.name}</strong>
               <span>${exercise.sets} sets x ${exercise.target_reps} reps | ${exercise.target_weight_kg || "bodyweight"} kg</span>
               <span>${exercise.equipment} | ${exercise.notes}</span>
+              <div class="exercise-actions">
+                <button type="button" data-exercise-id="${exercise.id}" data-exercise-name="${exercise.name}">Use in log</button>
+              </div>
             </div>
           `,
           )
@@ -146,6 +150,14 @@ function renderWorkout() {
     $("input[name='exercise_name']").value = firstExercise;
   }
   $("input[name='performed_on']").valueAsDate = new Date();
+  $$(".exercise-actions button").forEach((button) => {
+    button.addEventListener("click", () => {
+      $("input[name='planned_exercise_id']").value = button.dataset.exerciseId;
+      $("input[name='exercise_name']").value = button.dataset.exerciseName;
+      $("#selectedExercise").textContent = `Logging planned exercise: ${button.dataset.exerciseName}`;
+      document.querySelector("#logForm").scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+  });
 }
 
 function renderDiet() {
@@ -349,11 +361,14 @@ $("#logForm").addEventListener("submit", async (event) => {
   payload.reps_completed = Number(payload.reps_completed);
   payload.weight_kg = Number(payload.weight_kg);
   payload.perceived_effort = Number(payload.perceived_effort);
+  payload.planned_exercise_id = payload.planned_exercise_id ? Number(payload.planned_exercise_id) : null;
   payload.completed = form.get("completed") === "on";
   await api(`/api/users/${state.user.id}/workouts/logs`, {
     method: "POST",
     body: JSON.stringify(payload),
   });
+  $("input[name='planned_exercise_id']").value = "";
+  $("#selectedExercise").textContent = "";
   state = await api(`/api/users/${state.user.id}/dashboard`);
   render();
 });
