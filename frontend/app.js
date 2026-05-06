@@ -82,6 +82,7 @@ async function load() {
 function render() {
   renderProfile();
   renderStats();
+  renderCoachCockpit();
   renderCoachStrip();
   renderWorkout();
   renderDiet();
@@ -95,6 +96,7 @@ function render() {
 function showOnboarding(message = "") {
   $("#onboarding").classList.add("active");
   $("#onboardingError").textContent = message;
+  closeNavDrawer();
 }
 
 function showApp() {
@@ -121,6 +123,36 @@ function renderStats() {
   $("#plannedCompletion").textContent = `${progress.current_week_completed || 0}/${progress.current_week_planned || 0}`;
   $("#calorieTarget").textContent = diet.calories || 0;
   $("#proteinTarget").textContent = `${diet.protein_g || 0}g`;
+}
+
+function renderCoachCockpit() {
+  const plan = state.current_workout_plan;
+  const progress = state.progress || {};
+  const todayPlan = plan ? todayPlanContext(plan) : null;
+  const completionPercent = Math.round((progress.completion_rate || 0) * 100);
+  const insights = adaptiveInsights();
+  const primaryInsight = insights[0] || "Log one planned lift and FitGen will start adapting from real performance.";
+
+  $("#coachHeroEyebrow").textContent = todayLabel();
+  $("#coachHeroTitle").textContent = todayPlan ? `${todayPlan.day.day}: ${todayPlan.day.focus}` : "No active session";
+  $("#coachHeroMeta").textContent = todayPlan
+    ? `${formatDateLong(todayPlan.date)} | ${todayPlan.pending} pending, ${todayPlan.completed} done, ${todayPlan.skipped} skipped`
+    : "Create or generate a plan to start the adaptive loop.";
+  $("#coachHeroInsight").textContent = primaryInsight;
+  $("#sessionProgressLabel").textContent = `${completionPercent}%`;
+  $("#sessionProgressFill").style.width = `${Math.min(100, Math.max(0, completionPercent))}%`;
+  $("#adaptiveInsightList").innerHTML = insights
+    .map(
+      (insight, index) => `
+        <div class="adaptive-insight ${index === 0 ? "primary-insight" : ""}">
+          <span>${index + 1}</span>
+          <p>${escapeHtml(insight)}</p>
+        </div>
+      `,
+    )
+    .join("");
+  $("#bestLiftInsight").textContent = bestLiftInsight();
+  $("#consistencyInsight").textContent = consistencyInsight();
 }
 
 function renderCoachStrip() {
@@ -150,6 +182,76 @@ function renderCoachStrip() {
       <p>${diet?.protein_g || 0}g protein with Rs ${Math.round(diet?.estimated_daily_cost || 0)} estimated daily cost.</p>
     </article>
   `;
+}
+
+function todayPlanContext(plan) {
+  const todayIndex = plan.days.findIndex((day) => day.day === currentDayName());
+  const selectedIndex = todayIndex >= 0 ? todayIndex + 1 : pickWorkoutDay(plan.days);
+  const day = plan.days[selectedIndex - 1];
+  const summary = summarizeDay(day);
+  return {
+    day,
+    dayIndex: selectedIndex,
+    date: isoDateForPlanDay(plan.week_start, selectedIndex),
+    completed: summary.completed,
+    skipped: summary.skipped,
+    pending: summary.pending,
+  };
+}
+
+function adaptiveInsights() {
+  const progress = state.progress || {};
+  const logs = progress.recent_logs || [];
+  const insights = [];
+  const completion = progress.completion_rate || 0;
+  const skipped = progress.current_week_skipped || 0;
+  const planned = progress.current_week_planned || 0;
+  const completed = progress.current_week_completed || 0;
+  const highEffortLogs = logs.filter((log) => log.effort >= 9);
+  const missedLogs = logs.filter((log) => log.completed === false);
+
+  if (planned > 0) {
+    if (completion >= 0.85) {
+      insights.push(`Execution is strong at ${Math.round(completion * 100)}%. Next re-plan can apply progressive overload if effort stays controlled.`);
+    } else if (completion < 0.55) {
+      insights.push(`Only ${completed}/${planned} planned lifts are complete. Next week should reduce volume before adding intensity.`);
+    } else {
+      insights.push(`${completed}/${planned} planned lifts are complete. Finish today's queue before changing the plan.`);
+    }
+  }
+  if (skipped > 0 || missedLogs.length > 0) {
+    insights.push(`${Math.max(skipped, missedLogs.length)} skipped lift signal detected. FitGen should keep substitutions easier next cycle.`);
+  }
+  if (highEffortLogs.length > 0) {
+    insights.push(`${highEffortLogs[0].exercise} recently hit ${highEffortLogs[0].effort}/10 effort. Hold load steady until reps are cleaner.`);
+  }
+  if (logs.length >= 3) {
+    insights.push(`${logs.length} recent logs are feeding your plan memory: load, reps, effort, and completion now matter.`);
+  }
+  if (!insights.length) {
+    insights.push("No workout history yet. Complete or skip planned lifts so the coach can learn honestly.");
+    insights.push("Your first useful signal is not max weight. It is whether the planned session was completed cleanly.");
+  }
+  return insights.slice(0, 4);
+}
+
+function bestLiftInsight() {
+  const best = state.progress?.best_weights || {};
+  const entries = Object.entries(best).sort((a, b) => b[1] - a[1]);
+  if (!entries.length) return "Waiting for logs";
+  const [exercise, weight] = entries[0];
+  return `${exercise}: ${weight} kg`;
+}
+
+function consistencyInsight() {
+  const progress = state.progress || {};
+  const planned = progress.current_week_planned || 0;
+  if (!planned) return "No weekly plan yet";
+  const done = progress.current_week_completed || 0;
+  const skipped = progress.current_week_skipped || 0;
+  if (done === planned) return "Week fully resolved";
+  if (skipped > done) return "Skipped volume is leading";
+  return `${planned - done - skipped} lifts still need a decision`;
 }
 
 function renderWorkout() {
@@ -647,13 +749,49 @@ function profilePayload(form) {
   };
 }
 
+function switchView(viewId) {
+  $$(".tab").forEach((item) => item.classList.toggle("active", item.dataset.view === viewId));
+  $$(".rail-tab").forEach((item) => item.classList.toggle("active", item.dataset.view === viewId));
+  $$(".view").forEach((item) => item.classList.toggle("active", item.id === viewId));
+  closeNavDrawer();
+}
+
 $$(".tab").forEach((button) => {
   button.addEventListener("click", () => {
-    $$(".tab").forEach((item) => item.classList.remove("active"));
-    $$(".view").forEach((item) => item.classList.remove("active"));
-    button.classList.add("active");
-    $(`#${button.dataset.view}`).classList.add("active");
+    switchView(button.dataset.view);
   });
+});
+
+$$(".rail-tab").forEach((button) => {
+  button.addEventListener("click", () => {
+    switchView(button.dataset.view);
+  });
+});
+
+function openNavDrawer() {
+  $("#appShell").classList.add("nav-open");
+  $("#navToggleBtn").setAttribute("aria-expanded", "true");
+}
+
+function closeNavDrawer() {
+  $("#appShell")?.classList.remove("nav-open");
+  $("#navToggleBtn")?.setAttribute("aria-expanded", "false");
+}
+
+$("#navToggleBtn").addEventListener("click", () => {
+  if ($("#appShell").classList.contains("nav-open")) {
+    closeNavDrawer();
+    return;
+  }
+  openNavDrawer();
+});
+
+$("#navScrim").addEventListener("click", closeNavDrawer);
+
+$("#todayWorkoutBtn").addEventListener("click", () => {
+  selectedWorkoutDayIndex = state.current_workout_plan ? pickWorkoutDay(state.current_workout_plan.days) : null;
+  switchView("workout");
+  renderWorkout();
 });
 
 $$(".auth-tab").forEach((button) => {
