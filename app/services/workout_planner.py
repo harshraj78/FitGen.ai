@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from datetime import date, timedelta
+from typing import Any
 
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
@@ -51,6 +52,22 @@ WEEK_TEMPLATE = [
     ("Fri", "Full Body", ["Lower Strength", "Upper Push", "Upper Pull", "Core"]),
     ("Sat", "Recovery", ["Conditioning", "Core"]),
 ]
+
+DAY_FOCUS_MAP = {day_name: day_focus for day_name, day_focus, _ in WEEK_TEMPLATE}
+
+EQUIPMENT_ALIASES = {
+    "dumbbell": {"dumbbell", "dumbbells", "db", "adjustable dumbbell"},
+    "barbell": {"barbell", "rod", "olympic bar", "bar"},
+    "bench": {"bench", "flat bench", "adjustable bench"},
+    "cable": {"cable", "cable machine", "functional trainer"},
+    "leg_press": {"leg press", "leg press machine"},
+    "lat_pulldown": {"lat pulldown", "pulldown", "lat machine"},
+    "machine": {"machine", "chest press machine", "selectorized machine"},
+    "smith_machine": {"smith machine", "smith"},
+    "resistance_band": {"band", "bands", "resistance band", "resistance bands"},
+    "backpack": {"backpack", "weighted backpack"},
+    "bodyweight": {"bodyweight", "floor", "mat"},
+}
 
 
 class WorkoutPlanner:
@@ -140,6 +157,80 @@ class WorkoutPlanner:
             .order_by(desc(models.WorkoutPlan.week_start), desc(models.WorkoutPlan.id))
             .first()
         )
+
+    def generate_ai_ready_proposal(self, user: models.UserProfile, equipment_text: str) -> dict[str, Any]:
+        available = self.parse_equipment_text(equipment_text) or EQUIPMENT_BY_GYM.get(user.gym_type, EQUIPMENT_BY_GYM["home"])
+        metrics = self._performance_metrics(user.id)
+        modifier, rationale = self._intensity_modifier(user, metrics)
+        days: list[dict[str, Any]] = []
+
+        for day_name, day_focus, focus_blocks in WEEK_TEMPLATE:
+            for focus in focus_blocks:
+                exercise = self._select_exercise(focus, available)
+                sets = self._sets_for_goal(user.fitness_goal, day_focus, modifier)
+                reps = self._reps_for_goal(user.fitness_goal)
+                last_weight = metrics["best_weight_by_exercise"].get(exercise["name"], 0)
+                days.append(
+                    {
+                        "day": day_name,
+                        "focus": day_focus,
+                        "name": exercise["name"],
+                        "equipment": exercise["equipment"],
+                        "sets": sets,
+                        "target_reps": reps,
+                        "target_weight_kg": self._next_weight(last_weight, modifier, exercise["equipment"]),
+                        "notes": self._exercise_note(exercise, available, modifier),
+                    }
+                )
+
+        return {
+            "title": f"{user.name}'s equipment-aware week",
+            "rationale": f"{rationale}. Built from available equipment: {', '.join(sorted(available))}.",
+            "equipment_summary": sorted(available),
+            "days": days,
+        }
+
+    def apply_plan_proposal(self, user: models.UserProfile, proposal: dict[str, Any], week_start: date | None = None) -> models.WorkoutPlan:
+        week_start = week_start or self._monday(date.today())
+        plan = models.WorkoutPlan(
+            user_id=user.id,
+            week_start=week_start,
+            title=proposal["title"],
+            intensity_modifier=1.0,
+            rationale=proposal["rationale"],
+        )
+        self.db.add(plan)
+        self.db.flush()
+
+        for index, exercise in enumerate(proposal["days"], start=1):
+            day_name = exercise["day"]
+            self.db.add(
+                models.WorkoutExercise(
+                    plan_id=plan.id,
+                    day_index=self._day_index(day_name, index),
+                    day_name=day_name,
+                    focus=exercise["focus"],
+                    exercise_name=exercise["name"],
+                    equipment=exercise["equipment"],
+                    sets=exercise["sets"],
+                    target_reps=exercise["target_reps"],
+                    target_weight_kg=exercise["target_weight_kg"],
+                    notes=exercise["notes"],
+                )
+            )
+
+        self.db.commit()
+        self.db.refresh(plan)
+        return plan
+
+    def parse_equipment_text(self, equipment_text: str) -> set[str]:
+        parts = [part.strip().lower() for raw in equipment_text.replace("\n", ",").split(",") for part in [raw.strip()] if part.strip()]
+        available = {"bodyweight"}
+        for part in parts:
+            for canonical, aliases in EQUIPMENT_ALIASES.items():
+                if part == canonical or part in aliases or canonical.replace("_", " ") in part:
+                    available.add(canonical)
+        return available
 
     def _select_exercise(self, focus: str, available: set[str]) -> dict:
         candidates = [item for item in EXERCISE_LIBRARY if item["focus"] == focus]
@@ -275,3 +366,9 @@ class WorkoutPlanner:
 
     def _monday(self, current: date) -> date:
         return current - timedelta(days=current.weekday())
+
+    def _day_index(self, day_name: str, fallback_index: int) -> int:
+        for index, (template_day, _, _) in enumerate(WEEK_TEMPLATE, start=1):
+            if template_day == day_name:
+                return index
+        return min(6, max(1, fallback_index))

@@ -58,6 +58,38 @@ class FeedbackCreate(BaseModel):
     message: str = ""
 
 
+class AIWorkoutPlanRequest(BaseModel):
+    equipment_text: str = Field(min_length=2, max_length=3000)
+
+
+class AIExerciseQuestionRequest(BaseModel):
+    exercise_name: str
+    question: str = Field(min_length=3, max_length=2000)
+
+
+class AIDietAnalysisRequest(BaseModel):
+    foods_text: str = Field(min_length=2, max_length=3000)
+    question: str = Field(default="How can I use these foods well this week?", max_length=2000)
+
+
+class AIPlanExercise(BaseModel):
+    day: str
+    focus: str
+    name: str
+    equipment: str
+    sets: int = Field(ge=1, le=8)
+    target_reps: str
+    target_weight_kg: float = Field(ge=0, le=500)
+    notes: str
+
+
+class AIWorkoutPlanProposal(BaseModel):
+    title: str
+    rationale: str
+    equipment_summary: list[str]
+    days: list[AIPlanExercise]
+
+
 class DashboardOut(BaseModel):
     user: dict[str, Any]
     current_workout_plan: dict[str, Any] | None

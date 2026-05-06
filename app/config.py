@@ -8,7 +8,10 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./fitgen.db"
     auto_create_tables: bool | None = None
     openai_api_key: str | None = None
-    llm_model: str = "gpt-4o-mini"
+    groq_api_key: str | None = None
+    llm_provider: str = "groq"
+    llm_base_url: str = "https://api.groq.com/openai/v1"
+    llm_model: str = "openai/gpt-oss-20b"
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 

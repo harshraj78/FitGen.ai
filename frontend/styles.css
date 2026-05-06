@@ -247,6 +247,92 @@ canvas {
   gap: 16px;
 }
 
+.ai-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(320px, 0.9fr);
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.ai-panel textarea {
+  margin-top: 0;
+}
+
+.ai-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-top: 12px;
+}
+
+.ai-output {
+  margin-top: 14px;
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+}
+
+.hidden {
+  display: none;
+}
+
+.proposal-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.proposal-days {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.proposal-day {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  background: #fbfaf6;
+}
+
+.proposal-day h4,
+.diet-ai-summary strong {
+  margin: 0 0 6px;
+}
+
+.proposal-day ul,
+.diet-ai-columns ul {
+  padding-left: 18px;
+  margin: 10px 0 0;
+}
+
+.proposal-day li {
+  color: var(--muted);
+  font-size: 13px;
+  margin-top: 8px;
+}
+
+.proposal-day li span {
+  display: block;
+}
+
+.stack-form {
+  display: grid;
+  gap: 12px;
+}
+
+.diet-ai-panel {
+  margin-bottom: 16px;
+}
+
+.diet-ai-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
 .session-panel,
 .session-notes {
   min-height: 100%;
@@ -792,9 +878,12 @@ textarea {
   }
 
   .main-grid,
+  .ai-grid,
   .session-layout,
   .day-grid,
-  .meal-grid {
+  .meal-grid,
+  .proposal-days,
+  .diet-ai-columns {
     grid-template-columns: 1fr;
   }
 

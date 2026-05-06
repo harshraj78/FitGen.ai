@@ -197,7 +197,33 @@
               <h2 id="workoutTitle">Current weekly plan</h2>
             </div>
           </div>
-          <div class="session-layout">
+          <div class="ai-grid">
+            <article class="panel ai-panel">
+              <header>
+                <h3>Coach-built from your real equipment</h3>
+                <span>AI drafts, you approve</span>
+              </header>
+              <textarea id="equipmentInput" placeholder="Type what you actually have: dumbbells, bench, cable machine, lat pulldown, resistance bands"></textarea>
+              <div class="ai-actions">
+                <button id="generateAiPlanBtn" class="primary" type="button">Generate plan with AI</button>
+                <span id="aiPlanStatus" class="muted"></span>
+              </div>
+              <div id="aiPlanProposal" class="ai-output hidden"></div>
+            </article>
+            <article class="panel ai-panel">
+              <header>
+                <h3>Ask about one exercise</h3>
+                <span>Form, load, or substitutions</span>
+              </header>
+              <form id="exerciseQuestionForm" class="stack-form">
+                <label>Exercise<input id="exerciseQuestionName" name="exercise_name" placeholder="Goblet Squat" required /></label>
+                <label>Question<textarea id="exerciseQuestionInput" name="question" placeholder="How heavy should this feel if I am cutting?" required></textarea></label>
+                <button class="primary" type="submit">Ask FitGen AI</button>
+              </form>
+              <div id="exerciseAnswer" class="ai-output hidden"></div>
+            </article>
+          </div>
+          <div id="sessionWorkspace" class="session-layout">
             <article class="panel session-panel">
               <header>
                 <h3>Session flow</h3>
@@ -232,7 +258,7 @@
               </div>
             </article>
           </div>
-          <article class="panel log-panel">
+          <article id="logPanel" class="panel log-panel">
             <header>
               <h3>Log performance</h3>
               <span>Feeds progressive overload</span>
@@ -260,6 +286,19 @@
             </div>
             <a id="exportLink" class="button" href="#">Export report</a>
           </div>
+          <article class="panel ai-panel diet-ai-panel">
+            <header>
+              <h3>Analyze foods you already have</h3>
+              <span>Practical calories, protein, and tradeoffs</span>
+            </header>
+            <label>Foods available<textarea id="dietFoodsInput" placeholder="dal, rice, eggs, paneer, curd, roti, peanuts"></textarea></label>
+            <label>Ask AI<textarea id="dietQuestionInput" placeholder="Can I make this work for fat loss and still hit protein?"></textarea></label>
+            <div class="ai-actions">
+              <button id="analyzeDietBtn" class="primary" type="button">Analyze with AI</button>
+              <span id="dietAiStatus" class="muted"></span>
+            </div>
+            <div id="dietAiResult" class="ai-output hidden"></div>
+          </article>
           <div id="dietPlan" class="meal-grid"></div>
         </section>
 

@@ -12,6 +12,7 @@ from app import models, schemas
 from app.db import get_db, init_db
 from app.services.auth import account_dict, create_session, get_account_from_authorization, hash_password, normalize_email, verify_password
 from app.services.diet_planner import DietPlanner
+from app.services.llm import LLMService
 from app.services.review import WeeklyReviewService
 from app.services.workout_planner import WorkoutPlanner
 
@@ -144,7 +145,7 @@ def bootstrap(db: Session = Depends(get_db)) -> dict:
         WorkoutPlanner(db).generate_week(user)
         DietPlanner(db).generate_week(user)
         WeeklyReviewService(db).create_review(user)
-    return dashboard(user.id, db)
+    return dashboard(user.id, db, None)
 
 
 @app.get("/api/users/{user_id}/dashboard", response_model=schemas.DashboardOut)
@@ -179,6 +180,86 @@ def generate_weekly_plan(
     plan = WorkoutPlanner(db).generate_week(user)
     diet = DietPlanner(db).generate_week(user, plan.week_start)
     return {"workout_plan": WorkoutPlanner(db).serialize_plan(plan), "diet_plan": DietPlanner(db).serialize_plan(diet)}
+
+
+@app.post("/api/users/{user_id}/ai/workout-proposal")
+async def ai_workout_proposal(
+    user_id: int,
+    payload: schemas.AIWorkoutPlanRequest,
+    db: Session = Depends(get_db),
+    account: models.Account | None = Depends(_optional_account),
+) -> dict:
+    user = _get_user(db, user_id, account)
+    planner = WorkoutPlanner(db)
+    fallback = planner.generate_ai_ready_proposal(user, payload.equipment_text)
+    proposal = await LLMService().workout_plan_proposal(
+        {
+            "profile": _user_dict(user),
+            "progress": _progress(db, user.id),
+            "equipment_summary": fallback["equipment_summary"],
+            "fallback": fallback,
+        }
+    )
+    return {"enabled": LLMService().is_enabled(), "proposal": proposal, "question": "Is this good enough to use for your week?"}
+
+
+@app.post("/api/users/{user_id}/ai/workout-proposal/accept")
+def accept_ai_workout_proposal(
+    user_id: int,
+    payload: schemas.AIWorkoutPlanProposal,
+    db: Session = Depends(get_db),
+    account: models.Account | None = Depends(_optional_account),
+) -> dict:
+    user = _get_user(db, user_id, account)
+    planner = WorkoutPlanner(db)
+    plan = planner.apply_plan_proposal(user, payload.model_dump())
+    return {"status": "accepted", "workout_plan": planner.serialize_plan(plan)}
+
+
+@app.post("/api/users/{user_id}/ai/exercise-advice")
+async def ai_exercise_advice(
+    user_id: int,
+    payload: schemas.AIExerciseQuestionRequest,
+    db: Session = Depends(get_db),
+    account: models.Account | None = Depends(_optional_account),
+) -> dict:
+    user = _get_user(db, user_id, account)
+    answer = await LLMService().exercise_answer(
+        {
+            "profile": _user_dict(user),
+            "exercise_name": payload.exercise_name,
+            "question": payload.question,
+            "current_goal": user.fitness_goal,
+            "fallback": (
+                f"For {payload.exercise_name}, keep the load controlled, match the planned reps, "
+                "and stop before form degrades. If the movement feels unstable, reduce load and clean up tempo first."
+            ),
+        }
+    )
+    return {"answer": answer}
+
+
+@app.post("/api/users/{user_id}/ai/diet-analysis")
+async def ai_diet_analysis(
+    user_id: int,
+    payload: schemas.AIDietAnalysisRequest,
+    db: Session = Depends(get_db),
+    account: models.Account | None = Depends(_optional_account),
+) -> dict:
+    user = _get_user(db, user_id, account)
+    planner = DietPlanner(db)
+    current = planner.current_plan(user.id)
+    fallback = _diet_analysis_fallback(user, planner.serialize_plan(current), payload.foods_text)
+    analysis = await LLMService().diet_analysis(
+        {
+            "profile": _user_dict(user),
+            "question": payload.question,
+            "foods_text": payload.foods_text,
+            "current_targets": planner.serialize_plan(current),
+            "fallback": fallback,
+        }
+    )
+    return {"enabled": LLMService().is_enabled(), "analysis": analysis}
 
 
 @app.get("/api/users/{user_id}/workouts/current")
@@ -370,6 +451,49 @@ def _feedback_effect(signal: str) -> str:
         "joint_pain": "Next plan should bias toward lower-impact alternatives.",
         "good": "Next plan keeps baseline progression.",
     }.get(signal, "Feedback stored for the next planning cycle.")
+
+
+def _diet_analysis_fallback(user: models.UserProfile, current_plan: dict | None, foods_text: str) -> dict:
+    foods = [item.strip() for item in foods_text.replace("\n", ",").split(",") if item.strip()]
+    foods_lower = [item.lower() for item in foods]
+    calories = current_plan["calories"] if current_plan else 0
+    protein = current_plan["protein_g"] if current_plan else 0
+    protein_hits = sum(1 for item in foods_lower if any(token in item for token in ["egg", "paneer", "dal", "chana", "soy", "milk", "curd", "chicken", "fish"]))
+    carb_hits = sum(1 for item in foods_lower if any(token in item for token in ["rice", "roti", "poha", "oats", "bread", "dosa"]))
+    fat_hits = sum(1 for item in foods_lower if any(token in item for token in ["peanut", "ghee", "oil", "butter", "nuts"]))
+    estimated_calories = min(max(350, protein_hits * 180 + carb_hits * 220 + fat_hits * 130), max(600, calories))
+    estimated_protein = min(max(18, protein_hits * 12), max(30, protein))
+    benefits = []
+    risks = []
+    if protein_hits >= 2:
+        benefits.append("You have enough protein anchors to support recovery if portions are consistent.")
+    else:
+        risks.append("Protein sources look thin, so recovery and satiety may suffer.")
+    if carb_hits >= 1:
+        benefits.append("There is enough easy carbohydrate to fuel training sessions.")
+    else:
+        risks.append("Very low training carbs can make sessions feel flat if volume rises.")
+    if user.fitness_goal == "fat_loss":
+        benefits.append("This food list can work for fat loss if portions stay measured and fried extras stay low.")
+    if not risks:
+        risks.append("The main tradeoff is portion control, because calorie drift usually comes from oils and snacks.")
+    suggested_meals = [
+        f"Meal 1: {foods[0] if foods else 'Dal'} + curd + one measured carb source",
+        f"Meal 2: {foods[1] if len(foods) > 1 else 'Paneer or eggs'} + sabzi + roti/rice",
+        "Meal 3: Keep one protein-focused snack around training",
+    ]
+    return {
+        "summary": f"These foods can support {label_goal(user.fitness_goal)} if you keep protein regular and portion sizes honest.",
+        "estimated_calories": int(estimated_calories),
+        "estimated_protein_g": int(estimated_protein),
+        "benefits": benefits,
+        "risks": risks,
+        "suggested_meals": suggested_meals,
+    }
+
+
+def label_goal(goal: str) -> str:
+    return goal.replace("_", " ")
 
 
 def _seed_demo_history(db: Session, user: models.UserProfile) -> None:

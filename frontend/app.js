@@ -2,6 +2,7 @@ let state = null;
 const ACTIVE_USER_KEY = "fitgen-active-user-id";
 const AUTH_TOKEN_KEY = "fitgen-auth-token";
 let selectedWorkoutDayIndex = null;
+let pendingAiWorkoutProposal = null;
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
@@ -118,6 +119,9 @@ function renderStats() {
 
 function renderWorkout() {
   const plan = state.current_workout_plan;
+  renderAiWorkoutProposal();
+  $("#sessionWorkspace").classList.toggle("hidden", Boolean(pendingAiWorkoutProposal));
+  $("#logPanel").classList.toggle("hidden", Boolean(pendingAiWorkoutProposal));
   if (!plan) {
     $("#daySelector").innerHTML = "<p>No workout plan yet.</p>";
     $("#sessionSummary").innerHTML = "";
@@ -173,6 +177,7 @@ function renderWorkout() {
           <div class="session-exercise-actions">
             <button type="button" data-exercise-id="${exercise.id}" data-exercise-name="${exercise.name}" data-target-weight="${exercise.target_weight_kg || 0}">Log this lift</button>
             <button type="button" data-skip-exercise-id="${exercise.id}" data-skip-exercise-name="${exercise.name}">Mark skipped</button>
+            <button type="button" data-ask-exercise-name="${exercise.name}">Ask AI</button>
           </div>
         </article>
       `,
@@ -196,6 +201,13 @@ function renderWorkout() {
         await markExerciseSkipped(button.dataset.skipExerciseId, button.dataset.skipExerciseName);
       });
     }
+    if (button.dataset.askExerciseName) {
+      button.addEventListener("click", () => {
+        $("#exerciseQuestionName").value = button.dataset.askExerciseName;
+        $("#exerciseQuestionInput").focus();
+        document.querySelector("#exerciseQuestionForm").scrollIntoView({ behavior: "smooth", block: "center" });
+      });
+    }
   });
   const finishButton = $("#finishSessionBtn");
   const allResolved = dayStatuses.pending === 0 && selectedDay.exercises.length > 0;
@@ -213,6 +225,14 @@ function renderWorkout() {
 
 function renderDiet() {
   const diet = state.current_diet_plan;
+  const result = $("#dietAiResult");
+  const status = $("#dietAiStatus");
+  if (!result.innerHTML) {
+    result.classList.add("hidden");
+  }
+  if (!status.textContent) {
+    status.textContent = "Use your real pantry, not a perfect one.";
+  }
   if (!diet) {
     $("#dietPlan").innerHTML = "<p>No diet plan yet.</p>";
     return;
@@ -340,6 +360,69 @@ function sessionMessage(summary) {
   return `Session complete. ${summary.completed} planned lifts finished cleanly.`;
 }
 
+function renderAiWorkoutProposal() {
+  const panel = $("#aiPlanProposal");
+  const status = $("#aiPlanStatus");
+  if (!pendingAiWorkoutProposal) {
+    panel.innerHTML = "";
+    panel.classList.add("hidden");
+    if (!status.textContent) {
+      status.textContent = "Enter the equipment you genuinely have access to.";
+    }
+    return;
+  }
+  status.textContent = pendingAiWorkoutProposal.question || "Review the draft, then decide.";
+  const grouped = groupProposalDays(pendingAiWorkoutProposal.proposal.days);
+  panel.classList.remove("hidden");
+  panel.innerHTML = `
+    <div class="proposal-head">
+      <div>
+        <strong>${pendingAiWorkoutProposal.proposal.title}</strong>
+        <p class="muted">${pendingAiWorkoutProposal.proposal.rationale}</p>
+      </div>
+      <span class="budget">${(pendingAiWorkoutProposal.proposal.equipment_summary || []).join(", ")}</span>
+    </div>
+    <div class="proposal-days">
+      ${grouped
+        .map(
+          (day) => `
+          <section class="proposal-day">
+            <h4>${day.day}</h4>
+            <span class="muted">${day.focus}</span>
+            <ul>
+              ${day.exercises.map((exercise) => `<li><strong>${exercise.name}</strong> <span>${exercise.sets} x ${exercise.target_reps}</span></li>`).join("")}
+            </ul>
+          </section>
+        `,
+        )
+        .join("")}
+    </div>
+    <div class="ai-actions">
+      <button id="acceptAiPlanBtn" class="primary" type="button">Yes, use this plan</button>
+      <button id="dismissAiPlanBtn" type="button">No, keep current</button>
+    </div>
+  `;
+  $("#acceptAiPlanBtn").addEventListener("click", acceptAiPlan);
+  $("#dismissAiPlanBtn").addEventListener("click", () => {
+    pendingAiWorkoutProposal = null;
+    status.textContent = "Keeping your current plan.";
+    renderAiWorkoutProposal();
+  });
+}
+
+function groupProposalDays(days) {
+  const grouped = [];
+  days.forEach((exercise) => {
+    let day = grouped.find((item) => item.day === exercise.day);
+    if (!day) {
+      day = { day: exercise.day, focus: exercise.focus, exercises: [] };
+      grouped.push(day);
+    }
+    day.exercises.push(exercise);
+  });
+  return grouped;
+}
+
 async function markExerciseSkipped(exerciseId, exerciseName) {
   await api(`/api/users/${state.user.id}/workouts/logs`, {
     method: "POST",
@@ -450,6 +533,7 @@ $("#signupBackBtn").addEventListener("click", () => {
 
 $("#planBtn").addEventListener("click", async () => {
   await api(`/api/users/${state.user.id}/plans/weekly`, { method: "POST" });
+  pendingAiWorkoutProposal = null;
   state = await api(`/api/users/${state.user.id}/dashboard`);
   render();
 });
@@ -557,6 +641,91 @@ $$(".feedback-buttons button").forEach((button) => {
     });
     $("#feedbackResult").textContent = result.effect;
   });
+});
+
+$("#generateAiPlanBtn").addEventListener("click", async () => {
+  $("#aiPlanStatus").textContent = "Drafting a plan from your equipment...";
+  try {
+    pendingAiWorkoutProposal = await api(`/api/users/${state.user.id}/ai/workout-proposal`, {
+      method: "POST",
+      body: JSON.stringify({ equipment_text: $("#equipmentInput").value }),
+    });
+    renderAiWorkoutProposal();
+  } catch (error) {
+    $("#aiPlanStatus").textContent = error.message;
+  }
+});
+
+async function acceptAiPlan() {
+  $("#aiPlanStatus").textContent = "Applying this plan...";
+  await api(`/api/users/${state.user.id}/ai/workout-proposal/accept`, {
+    method: "POST",
+    body: JSON.stringify(pendingAiWorkoutProposal.proposal),
+  });
+  pendingAiWorkoutProposal = null;
+  state = await api(`/api/users/${state.user.id}/dashboard`);
+  render();
+  $("#aiPlanStatus").textContent = "Accepted. Your session flow is now using this plan.";
+}
+
+$("#exerciseQuestionForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const result = $("#exerciseAnswer");
+  result.classList.remove("hidden");
+  result.innerHTML = "<p class='muted'>Thinking through that lift...</p>";
+  try {
+    const answer = await api(`/api/users/${state.user.id}/ai/exercise-advice`, {
+      method: "POST",
+      body: JSON.stringify({
+        exercise_name: $("#exerciseQuestionName").value,
+        question: $("#exerciseQuestionInput").value,
+      }),
+    });
+    result.innerHTML = `<p>${answer.answer}</p>`;
+  } catch (error) {
+    result.innerHTML = `<p class="error">${error.message}</p>`;
+  }
+});
+
+$("#analyzeDietBtn").addEventListener("click", async () => {
+  const result = $("#dietAiResult");
+  result.classList.remove("hidden");
+  $("#dietAiStatus").textContent = "Reviewing your current foods...";
+  result.innerHTML = "<p class='muted'>Checking calories, protein, and tradeoffs...</p>";
+  try {
+    const response = await api(`/api/users/${state.user.id}/ai/diet-analysis`, {
+      method: "POST",
+      body: JSON.stringify({
+        foods_text: $("#dietFoodsInput").value,
+        question: $("#dietQuestionInput").value || "How can I make this work well for my goal?",
+      }),
+    });
+    const analysis = response.analysis;
+    $("#dietAiStatus").textContent = response.enabled ? "AI used your pantry and goal." : "Fallback analysis used because AI is not configured.";
+    result.innerHTML = `
+      <div class="diet-ai-summary">
+        <strong>${analysis.estimated_calories} kcal | ${analysis.estimated_protein_g}g protein</strong>
+        <p>${analysis.summary}</p>
+      </div>
+      <div class="diet-ai-columns">
+        <div>
+          <h4>Benefits</h4>
+          <ul>${analysis.benefits.map((item) => `<li>${item}</li>`).join("")}</ul>
+        </div>
+        <div>
+          <h4>Risks</h4>
+          <ul>${analysis.risks.map((item) => `<li>${item}</li>`).join("")}</ul>
+        </div>
+      </div>
+      <div>
+        <h4>Suggested use</h4>
+        <ul>${analysis.suggested_meals.map((item) => `<li>${item}</li>`).join("")}</ul>
+      </div>
+    `;
+  } catch (error) {
+    $("#dietAiStatus").textContent = error.message;
+    result.innerHTML = `<p class="error">${error.message}</p>`;
+  }
 });
 
 load().catch((error) => {
