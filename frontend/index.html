@@ -148,6 +148,38 @@
             </div>
           </div>
 
+          <section class="coach-cockpit">
+            <article class="coach-hero">
+              <div>
+                <p class="eyebrow" id="coachHeroEyebrow">Coach cockpit</p>
+                <h2 id="coachHeroTitle">Loading today's session</h2>
+                <p id="coachHeroMeta"></p>
+              </div>
+              <div class="coach-hero-insight">
+                <span>Adaptive read</span>
+                <strong id="coachHeroInsight">Reading your recent history...</strong>
+              </div>
+              <div class="coach-hero-footer">
+                <button id="todayWorkoutBtn" class="primary" type="button">Open today session</button>
+                <div class="session-progress-block">
+                  <div class="session-progress-label">
+                    <span>Week execution</span>
+                    <strong id="sessionProgressLabel">0%</strong>
+                  </div>
+                  <div class="session-progress-track"><i id="sessionProgressFill"></i></div>
+                </div>
+              </div>
+            </article>
+
+            <article class="panel insight-panel">
+              <header>
+                <h3>What FitGen learned</h3>
+                <span>From logs and feedback</span>
+              </header>
+              <div id="adaptiveInsightList" class="adaptive-insights"></div>
+            </article>
+          </section>
+
           <div class="stats-grid">
             <article class="stat">
               <span>Completion</span>
@@ -188,6 +220,16 @@
               </header>
               <p id="weeklySummary"></p>
               <p id="weeklyAdjustment" class="muted"></p>
+              <div class="mini-insights">
+                <div>
+                  <span>Strongest signal</span>
+                  <strong id="bestLiftInsight">Waiting for logs</strong>
+                </div>
+                <div>
+                  <span>Consistency</span>
+                  <strong id="consistencyInsight">No trend yet</strong>
+                </div>
+              </div>
             </article>
           </div>
         </section>
