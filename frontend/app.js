@@ -3,6 +3,10 @@ const ACTIVE_USER_KEY = "fitgen-active-user-id";
 const AUTH_TOKEN_KEY = "fitgen-auth-token";
 let selectedWorkoutDayIndex = null;
 let pendingAiWorkoutProposal = null;
+let currentDateKey = localDateKey();
+let dayRolloverTimer = null;
+
+const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
@@ -78,12 +82,14 @@ async function load() {
 function render() {
   renderProfile();
   renderStats();
+  renderCoachStrip();
   renderWorkout();
   renderDiet();
   renderReview();
   renderRecentLogs();
   drawVolumeChart();
   $("#exportLink").href = `/api/users/${state.user.id}/report/export`;
+  startDayRolloverWatcher();
 }
 
 function showOnboarding(message = "") {
@@ -117,11 +123,43 @@ function renderStats() {
   $("#proteinTarget").textContent = `${diet.protein_g || 0}g`;
 }
 
+function renderCoachStrip() {
+  const plan = state.current_workout_plan;
+  const diet = state.current_diet_plan;
+  const progress = state.progress || {};
+  const todayIndex = plan ? plan.days.findIndex((day) => day.day === currentDayName()) : -1;
+  const todayPlanDay = todayIndex >= 0 ? plan.days[todayIndex] : null;
+  const nextDay = todayPlanDay || plan?.days?.find((day) => day.exercises.some((exercise) => exercise.status === "pending")) || plan?.days?.[0];
+  const nextDayIndex = nextDay ? plan.days.findIndex((day) => day.day === nextDay.day) + 1 : null;
+  const nextDate = plan && nextDayIndex ? formatPlanDayDate(plan.week_start, nextDayIndex) : "";
+  const pendingCount = nextDay?.exercises?.filter((exercise) => exercise.status === "pending").length || 0;
+  $("#coachStrip").innerHTML = `
+    <article class="coach-card primary-coach">
+      <span>${todayLabel()}</span>
+      <strong>${nextDay ? `${escapeHtml(nextDay.day)}: ${escapeHtml(nextDay.focus)}` : "No plan yet"}</strong>
+      <p>${nextDay ? `${nextDate}. ${pendingCount} lifts still open for this day.` : "Generate a weekly plan to start tracking."}</p>
+    </article>
+    <article class="coach-card">
+      <span>Plan signal</span>
+      <strong>${progress.current_week_completed || 0}/${progress.current_week_planned || 0} completed</strong>
+      <p>${progress.current_week_skipped || 0} skipped lifts will influence the next week.</p>
+    </article>
+    <article class="coach-card">
+      <span>Nutrition target</span>
+      <strong>${diet?.calories || 0} kcal</strong>
+      <p>${diet?.protein_g || 0}g protein with Rs ${Math.round(diet?.estimated_daily_cost || 0)} estimated daily cost.</p>
+    </article>
+  `;
+}
+
 function renderWorkout() {
   const plan = state.current_workout_plan;
   renderAiWorkoutProposal();
-  $("#sessionWorkspace").classList.toggle("hidden", Boolean(pendingAiWorkoutProposal));
-  $("#logPanel").classList.toggle("hidden", Boolean(pendingAiWorkoutProposal));
+  const isReviewingAiPlan = Boolean(pendingAiWorkoutProposal);
+  $("#sessionWorkspace").classList.toggle("hidden", isReviewingAiPlan);
+  $("#logPanel").classList.toggle("hidden", isReviewingAiPlan);
+  $("#workoutModePill").textContent = isReviewingAiPlan ? "Review AI plan" : "Session ready";
+  $("#workoutModePill").classList.toggle("reviewing", isReviewingAiPlan);
   if (!plan) {
     $("#daySelector").innerHTML = "<p>No workout plan yet.</p>";
     $("#sessionSummary").innerHTML = "";
@@ -129,13 +167,18 @@ function renderWorkout() {
     $("#finishSessionMessage").textContent = "";
     return;
   }
+  if (!$("#equipmentInput").value.trim()) {
+    const equipment = [...new Set(plan.days.flatMap((day) => day.exercises.map((exercise) => exercise.equipment)))];
+    $("#equipmentInput").value = equipment.filter(Boolean).join(", ");
+  }
   if (!selectedWorkoutDayIndex || !plan.days.some((day, index) => index + 1 === selectedWorkoutDayIndex)) {
     selectedWorkoutDayIndex = pickWorkoutDay(plan.days);
   }
   const selectedDay = plan.days[selectedWorkoutDayIndex - 1];
+  const selectedDate = isoDateForPlanDay(plan.week_start, selectedWorkoutDayIndex);
   const dayStatuses = summarizeDay(selectedDay);
   $("#workoutTitle").textContent = plan.title;
-  $("#sessionMeta").textContent = `${selectedDay.day} | ${selectedDay.exercises.length} planned exercises`;
+  $("#sessionMeta").textContent = `${selectedDay.day}, ${formatDateLong(selectedDate)} | ${selectedDay.exercises.length} planned exercises`;
   $("#sessionSummary").innerHTML = `
     <span class="session-summary-chip done">${dayStatuses.completed} done</span>
     <span class="session-summary-chip skipped">${dayStatuses.skipped} skipped</span>
@@ -146,7 +189,7 @@ function renderWorkout() {
       (day, index) => `
       <button type="button" class="day-pill ${selectedWorkoutDayIndex === index + 1 ? "active" : ""}" data-day-index="${index + 1}">
         <strong>${day.day}</strong>
-        <span>${day.focus}</span>
+        <span>${formatPlanDayDate(plan.week_start, index + 1)}</span>
       </button>
     `,
     )
@@ -155,7 +198,7 @@ function renderWorkout() {
     <div class="session-day-head">
       <div>
         <h3>${selectedDay.day}</h3>
-        <p class="muted">${selectedDay.focus}</p>
+        <p class="muted">${selectedDay.focus} | ${formatDateLong(selectedDate)}</p>
       </div>
       <span class="session-badge">${selectedDay.exercises.length} lifts queued</span>
     </div>
@@ -220,7 +263,7 @@ function renderWorkout() {
   if (firstExercise && !$("input[name='exercise_name']").value) {
     $("input[name='exercise_name']").value = firstExercise;
   }
-  $("input[name='performed_on']").valueAsDate = new Date();
+  $("input[name='performed_on']").value = selectedDate;
 }
 
 function renderDiet() {
@@ -241,9 +284,12 @@ function renderDiet() {
     .map(
       (meal) => `
       <article class="meal">
-        <h3>${meal.name}</h3>
+        <div class="meal-top">
+          <h3>${meal.name}</h3>
+          <span>${meal.protein_g}g protein</span>
+        </div>
         <ul>${meal.items.map((item) => `<li>${item}</li>`).join("")}</ul>
-        <p>${meal.calories} kcal | ${meal.protein_g}g protein</p>
+        <p>${meal.calories} kcal</p>
         <span class="budget">Rs ${meal.cost_rs}</span>
       </article>
     `,
@@ -325,12 +371,32 @@ function label(value) {
   return String(value).replaceAll("_", " ");
 }
 
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function setButtonLoading(button, isLoading, loadingText) {
+  if (isLoading) {
+    button.dataset.originalText = button.textContent;
+    button.textContent = loadingText;
+    button.disabled = true;
+    return;
+  }
+  button.textContent = button.dataset.originalText || button.textContent;
+  button.disabled = false;
+}
+
 function labelExerciseStatus(status) {
   return { completed: "Done", skipped: "Skipped", pending: "Pending" }[status] || "Pending";
 }
 
 function pickWorkoutDay(days) {
-  const today = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][new Date().getDay()];
+  const today = currentDayName();
   const matchIndex = days.findIndex((day) => day.day === today);
   return matchIndex >= 0 ? matchIndex + 1 : 1;
 }
@@ -373,24 +439,35 @@ function renderAiWorkoutProposal() {
   }
   status.textContent = pendingAiWorkoutProposal.question || "Review the draft, then decide.";
   const grouped = groupProposalDays(pendingAiWorkoutProposal.proposal.days);
+  const exerciseCount = pendingAiWorkoutProposal.proposal.days.length;
+  const sourceLabel = pendingAiWorkoutProposal.enabled ? "Generated with Groq" : "Deterministic fallback";
   panel.classList.remove("hidden");
   panel.innerHTML = `
+    <div class="proposal-review-banner">
+      <strong>${sourceLabel}</strong>
+      <span>${grouped.length} days | ${exerciseCount} exercises | Accepting replaces the active weekly plan.</span>
+    </div>
     <div class="proposal-head">
       <div>
-        <strong>${pendingAiWorkoutProposal.proposal.title}</strong>
-        <p class="muted">${pendingAiWorkoutProposal.proposal.rationale}</p>
+        <strong>${escapeHtml(pendingAiWorkoutProposal.proposal.title)}</strong>
+        <p class="muted">${escapeHtml(pendingAiWorkoutProposal.proposal.rationale)}</p>
       </div>
-      <span class="budget">${(pendingAiWorkoutProposal.proposal.equipment_summary || []).join(", ")}</span>
+      <span class="budget">${escapeHtml((pendingAiWorkoutProposal.proposal.equipment_summary || []).join(", "))}</span>
     </div>
     <div class="proposal-days">
       ${grouped
         .map(
           (day) => `
           <section class="proposal-day">
-            <h4>${day.day}</h4>
-            <span class="muted">${day.focus}</span>
+            <h4>${escapeHtml(day.day)}</h4>
+            <span class="muted">${escapeHtml(day.focus)}</span>
             <ul>
-              ${day.exercises.map((exercise) => `<li><strong>${exercise.name}</strong> <span>${exercise.sets} x ${exercise.target_reps}</span></li>`).join("")}
+              ${day.exercises
+                .map(
+                  (exercise) =>
+                    `<li><strong>${escapeHtml(exercise.name)}</strong> <span>${exercise.sets} x ${escapeHtml(exercise.target_reps)} | ${escapeHtml(exercise.equipment)}</span></li>`,
+                )
+                .join("")}
             </ul>
           </section>
         `,
@@ -399,7 +476,7 @@ function renderAiWorkoutProposal() {
     </div>
     <div class="ai-actions">
       <button id="acceptAiPlanBtn" class="primary" type="button">Yes, use this plan</button>
-      <button id="dismissAiPlanBtn" type="button">No, keep current</button>
+      <button id="dismissAiPlanBtn" type="button">Keep current plan</button>
     </div>
   `;
   $("#acceptAiPlanBtn").addEventListener("click", acceptAiPlan);
@@ -423,13 +500,83 @@ function groupProposalDays(days) {
   return grouped;
 }
 
+function appendCommaValue(input, value) {
+  const current = input.value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  if (!current.some((item) => item.toLowerCase() === value.toLowerCase())) {
+    current.push(value);
+  }
+  input.value = current.join(", ");
+  input.focus();
+}
+
+function localDateKey(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function currentDayName() {
+  return DAY_NAMES[new Date().getDay()];
+}
+
+function todayLabel() {
+  return `Today, ${currentDayName()}`;
+}
+
+function parseLocalDate(dateKey) {
+  const [year, month, day] = dateKey.split("-").map(Number);
+  return new Date(year, month - 1, day);
+}
+
+function addDays(date, days) {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+function isoDateForPlanDay(weekStart, dayIndex) {
+  return localDateKey(addDays(parseLocalDate(weekStart), dayIndex - 1));
+}
+
+function formatPlanDayDate(weekStart, dayIndex) {
+  return formatDateShort(isoDateForPlanDay(weekStart, dayIndex));
+}
+
+function formatDateShort(dateKey) {
+  return parseLocalDate(dateKey).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+function formatDateLong(dateKey) {
+  return parseLocalDate(dateKey).toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" });
+}
+
+function startDayRolloverWatcher() {
+  if (dayRolloverTimer) return;
+  dayRolloverTimer = window.setInterval(() => {
+    const nextDateKey = localDateKey();
+    if (nextDateKey === currentDateKey) return;
+    currentDateKey = nextDateKey;
+    selectedWorkoutDayIndex = null;
+    if (state) {
+      render();
+    }
+  }, 60000);
+}
+
 async function markExerciseSkipped(exerciseId, exerciseName) {
+  const performedOn = state.current_workout_plan
+    ? isoDateForPlanDay(state.current_workout_plan.week_start, selectedWorkoutDayIndex || pickWorkoutDay(state.current_workout_plan.days))
+    : localDateKey();
   await api(`/api/users/${state.user.id}/workouts/logs`, {
     method: "POST",
     body: JSON.stringify({
       planned_exercise_id: Number(exerciseId),
       exercise_name: exerciseName,
-      performed_on: state.current_workout_plan.week_start,
+      performed_on: performedOn,
       sets_completed: 0,
       reps_completed: 0,
       weight_kg: 0,
@@ -643,36 +790,75 @@ $$(".feedback-buttons button").forEach((button) => {
   });
 });
 
+$$("#equipmentQuickPicks button").forEach((button) => {
+  button.addEventListener("click", () => {
+    appendCommaValue($("#equipmentInput"), button.dataset.equipment);
+    $("#aiPlanStatus").textContent = "Equipment added. Generate when the list matches your gym.";
+  });
+});
+
+$$("#foodQuickPicks button").forEach((button) => {
+  button.addEventListener("click", () => {
+    appendCommaValue($("#dietFoodsInput"), button.dataset.food);
+    $("#dietAiStatus").textContent = "Food added. Analyze when your pantry list is ready.";
+  });
+});
+
 $("#generateAiPlanBtn").addEventListener("click", async () => {
+  const equipmentText = $("#equipmentInput").value.trim();
+  const button = $("#generateAiPlanBtn");
+  if (!equipmentText) {
+    $("#aiPlanStatus").textContent = "Add at least one equipment item first.";
+    $("#equipmentInput").focus();
+    return;
+  }
   $("#aiPlanStatus").textContent = "Drafting a plan from your equipment...";
+  setButtonLoading(button, true, "Generating...");
   try {
     pendingAiWorkoutProposal = await api(`/api/users/${state.user.id}/ai/workout-proposal`, {
       method: "POST",
-      body: JSON.stringify({ equipment_text: $("#equipmentInput").value }),
+      body: JSON.stringify({ equipment_text: equipmentText }),
     });
     renderAiWorkoutProposal();
   } catch (error) {
     $("#aiPlanStatus").textContent = error.message;
+  } finally {
+    setButtonLoading(button, false);
   }
 });
 
 async function acceptAiPlan() {
+  const button = $("#acceptAiPlanBtn");
   $("#aiPlanStatus").textContent = "Applying this plan...";
-  await api(`/api/users/${state.user.id}/ai/workout-proposal/accept`, {
-    method: "POST",
-    body: JSON.stringify(pendingAiWorkoutProposal.proposal),
-  });
-  pendingAiWorkoutProposal = null;
-  state = await api(`/api/users/${state.user.id}/dashboard`);
-  render();
-  $("#aiPlanStatus").textContent = "Accepted. Your session flow is now using this plan.";
+  setButtonLoading(button, true, "Applying...");
+  try {
+    await api(`/api/users/${state.user.id}/ai/workout-proposal/accept`, {
+      method: "POST",
+      body: JSON.stringify(pendingAiWorkoutProposal.proposal),
+    });
+    pendingAiWorkoutProposal = null;
+    state = await api(`/api/users/${state.user.id}/dashboard`);
+    selectedWorkoutDayIndex = null;
+    render();
+    $("#aiPlanStatus").textContent = "Accepted. Your session flow is now using this plan.";
+  } catch (error) {
+    $("#aiPlanStatus").textContent = error.message;
+    setButtonLoading(button, false);
+  }
 }
 
 $("#exerciseQuestionForm").addEventListener("submit", async (event) => {
   event.preventDefault();
+  const button = event.currentTarget.querySelector("button[type='submit']");
+  if (!$("#exerciseQuestionName").value.trim() || !$("#exerciseQuestionInput").value.trim()) {
+    $("#exerciseAnswer").classList.remove("hidden");
+    $("#exerciseAnswer").innerHTML = "<p class='error'>Pick an exercise and ask a specific question.</p>";
+    return;
+  }
   const result = $("#exerciseAnswer");
   result.classList.remove("hidden");
   result.innerHTML = "<p class='muted'>Thinking through that lift...</p>";
+  setButtonLoading(button, true, "Asking...");
   try {
     const answer = await api(`/api/users/${state.user.id}/ai/exercise-advice`, {
       method: "POST",
@@ -681,17 +867,26 @@ $("#exerciseQuestionForm").addEventListener("submit", async (event) => {
         question: $("#exerciseQuestionInput").value,
       }),
     });
-    result.innerHTML = `<p>${answer.answer}</p>`;
+    result.innerHTML = `<p>${escapeHtml(answer.answer)}</p>`;
   } catch (error) {
     result.innerHTML = `<p class="error">${error.message}</p>`;
+  } finally {
+    setButtonLoading(button, false);
   }
 });
 
 $("#analyzeDietBtn").addEventListener("click", async () => {
+  const button = $("#analyzeDietBtn");
+  if (!$("#dietFoodsInput").value.trim()) {
+    $("#dietAiStatus").textContent = "Add the foods you already have first.";
+    $("#dietFoodsInput").focus();
+    return;
+  }
   const result = $("#dietAiResult");
   result.classList.remove("hidden");
   $("#dietAiStatus").textContent = "Reviewing your current foods...";
   result.innerHTML = "<p class='muted'>Checking calories, protein, and tradeoffs...</p>";
+  setButtonLoading(button, true, "Analyzing...");
   try {
     const response = await api(`/api/users/${state.user.id}/ai/diet-analysis`, {
       method: "POST",
@@ -705,26 +900,28 @@ $("#analyzeDietBtn").addEventListener("click", async () => {
     result.innerHTML = `
       <div class="diet-ai-summary">
         <strong>${analysis.estimated_calories} kcal | ${analysis.estimated_protein_g}g protein</strong>
-        <p>${analysis.summary}</p>
+        <p>${escapeHtml(analysis.summary)}</p>
       </div>
       <div class="diet-ai-columns">
         <div>
           <h4>Benefits</h4>
-          <ul>${analysis.benefits.map((item) => `<li>${item}</li>`).join("")}</ul>
+          <ul>${analysis.benefits.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
         </div>
         <div>
           <h4>Risks</h4>
-          <ul>${analysis.risks.map((item) => `<li>${item}</li>`).join("")}</ul>
+          <ul>${analysis.risks.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
         </div>
       </div>
       <div>
         <h4>Suggested use</h4>
-        <ul>${analysis.suggested_meals.map((item) => `<li>${item}</li>`).join("")}</ul>
+        <ul>${analysis.suggested_meals.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
       </div>
     `;
   } catch (error) {
     $("#dietAiStatus").textContent = error.message;
     result.innerHTML = `<p class="error">${error.message}</p>`;
+  } finally {
+    setButtonLoading(button, false);
   }
 });
 

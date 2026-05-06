@@ -171,6 +171,8 @@
             </article>
           </div>
 
+          <section class="coach-strip" id="coachStrip"></section>
+
           <div class="main-grid">
             <article class="panel">
               <header>
@@ -196,6 +198,7 @@
               <p class="eyebrow">Training</p>
               <h2 id="workoutTitle">Current weekly plan</h2>
             </div>
+            <div class="view-state-pill" id="workoutModePill">Session ready</div>
           </div>
           <div class="ai-grid">
             <article class="panel ai-panel">
@@ -203,6 +206,14 @@
                 <h3>Coach-built from your real equipment</h3>
                 <span>AI drafts, you approve</span>
               </header>
+              <div class="quick-picks" id="equipmentQuickPicks">
+                <button type="button" data-equipment="dumbbells">Dumbbells</button>
+                <button type="button" data-equipment="bench">Bench</button>
+                <button type="button" data-equipment="barbell">Barbell</button>
+                <button type="button" data-equipment="cable machine">Cable</button>
+                <button type="button" data-equipment="lat pulldown">Lat pulldown</button>
+                <button type="button" data-equipment="resistance bands">Bands</button>
+              </div>
               <textarea id="equipmentInput" placeholder="Type what you actually have: dumbbells, bench, cable machine, lat pulldown, resistance bands"></textarea>
               <div class="ai-actions">
                 <button id="generateAiPlanBtn" class="primary" type="button">Generate plan with AI</button>
@@ -253,7 +264,7 @@
                 </div>
                 <div class="cue-item">
                   <strong>3. Log honestly</strong>
-                  <span>Completion, effort, and missed lifts all affect next week’s plan.</span>
+                  <span>Completion, effort, and missed lifts all affect next week's plan.</span>
                 </div>
               </div>
             </article>
@@ -291,6 +302,16 @@
               <h3>Analyze foods you already have</h3>
               <span>Practical calories, protein, and tradeoffs</span>
             </header>
+            <div class="quick-picks" id="foodQuickPicks">
+              <button type="button" data-food="dal">Dal</button>
+              <button type="button" data-food="rice">Rice</button>
+              <button type="button" data-food="roti">Roti</button>
+              <button type="button" data-food="eggs">Eggs</button>
+              <button type="button" data-food="paneer">Paneer</button>
+              <button type="button" data-food="curd">Curd</button>
+              <button type="button" data-food="peanuts">Peanuts</button>
+              <button type="button" data-food="soy chunks">Soy chunks</button>
+            </div>
             <label>Foods available<textarea id="dietFoodsInput" placeholder="dal, rice, eggs, paneer, curd, roti, peanuts"></textarea></label>
             <label>Ask AI<textarea id="dietQuestionInput" placeholder="Can I make this work for fat loss and still hit protein?"></textarea></label>
             <div class="ai-actions">
