@@ -119,8 +119,16 @@
       </form>
     </section>
 
-    <main class="shell">
-      <aside class="sidebar">
+    <main class="shell" id="appShell">
+      <button id="navToggleBtn" class="nav-toggle" type="button" aria-label="Open navigation" aria-expanded="false">☰</button>
+      <div id="navScrim" class="nav-scrim"></div>
+      <aside class="nav-rail" aria-label="Quick navigation">
+        <button class="rail-tab active" data-view="dashboard" type="button" title="Dashboard">D</button>
+        <button class="rail-tab" data-view="workout" type="button" title="Workout">W</button>
+        <button class="rail-tab" data-view="diet" type="button" title="Diet">D</button>
+        <button class="rail-tab" data-view="feedback" type="button" title="Feedback">F</button>
+      </aside>
+      <aside class="sidebar" id="sidebarDrawer" aria-label="Main navigation">
         <div>
           <p class="eyebrow">FitGen AI</p>
           <h1>Adaptive trainer system</h1>

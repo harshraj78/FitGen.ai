@@ -96,6 +96,7 @@ function render() {
 function showOnboarding(message = "") {
   $("#onboarding").classList.add("active");
   $("#onboardingError").textContent = message;
+  closeNavDrawer();
 }
 
 function showApp() {
@@ -750,7 +751,9 @@ function profilePayload(form) {
 
 function switchView(viewId) {
   $$(".tab").forEach((item) => item.classList.toggle("active", item.dataset.view === viewId));
+  $$(".rail-tab").forEach((item) => item.classList.toggle("active", item.dataset.view === viewId));
   $$(".view").forEach((item) => item.classList.toggle("active", item.id === viewId));
+  closeNavDrawer();
 }
 
 $$(".tab").forEach((button) => {
@@ -758,6 +761,32 @@ $$(".tab").forEach((button) => {
     switchView(button.dataset.view);
   });
 });
+
+$$(".rail-tab").forEach((button) => {
+  button.addEventListener("click", () => {
+    switchView(button.dataset.view);
+  });
+});
+
+function openNavDrawer() {
+  $("#appShell").classList.add("nav-open");
+  $("#navToggleBtn").setAttribute("aria-expanded", "true");
+}
+
+function closeNavDrawer() {
+  $("#appShell")?.classList.remove("nav-open");
+  $("#navToggleBtn")?.setAttribute("aria-expanded", "false");
+}
+
+$("#navToggleBtn").addEventListener("click", () => {
+  if ($("#appShell").classList.contains("nav-open")) {
+    closeNavDrawer();
+    return;
+  }
+  openNavDrawer();
+});
+
+$("#navScrim").addEventListener("click", closeNavDrawer);
 
 $("#todayWorkoutBtn").addEventListener("click", () => {
   selectedWorkoutDayIndex = state.current_workout_plan ? pickWorkoutDay(state.current_workout_plan.days) : null;
