@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app import models, schemas
 from app.db import get_db, init_db
+from app.routes.sessions import router as session_router
 from app.services.auth import account_dict, create_session, get_account_from_authorization, hash_password, normalize_email, verify_password
 from app.services.diet_planner import DietPlanner
 from app.services.llm import LLMService
@@ -27,6 +28,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+app.include_router(session_router, prefix="/api")
 
 
 @app.on_event("startup")
@@ -415,7 +417,7 @@ def _progress(db: Session, user_id: int) -> dict:
             {
                 "date": log.performed_on.isoformat(),
                 "exercise": log.exercise_name,
-                "volume": log.weight_kg * log.reps_completed * max(log.sets_completed, 1),
+                "volume": log.weight_kg * log.reps_completed,
                 "effort": log.perceived_effort,
             }
         )

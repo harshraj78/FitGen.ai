@@ -32,6 +32,19 @@ class FeedbackSignal(str, Enum):
     good = "good"
 
 
+class WorkoutSessionStatus(str, Enum):
+    active = "active"
+    completed = "completed"
+    abandoned = "abandoned"
+
+
+class SessionExerciseStatus(str, Enum):
+    pending = "pending"
+    in_progress = "in_progress"
+    completed = "completed"
+    skipped = "skipped"
+
+
 class Account(Base):
     __tablename__ = "accounts"
 
@@ -79,6 +92,7 @@ class UserProfile(Base):
     feedback: Mapped[list["Feedback"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     diet_plans: Mapped[list["DietPlan"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     weekly_reviews: Mapped[list["WeeklyReview"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    workout_sessions: Mapped[list["WorkoutSession"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 
 
 class WorkoutPlan(Base):
@@ -120,6 +134,7 @@ class WorkoutLog(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("user_profiles.id"), index=True)
     planned_exercise_id: Mapped[int | None] = mapped_column(ForeignKey("workout_exercises.id"), nullable=True, index=True)
+    session_id: Mapped[int | None] = mapped_column(ForeignKey("workout_sessions.id"), nullable=True, index=True)
     exercise_name: Mapped[str] = mapped_column(String(140), nullable=False)
     performed_on: Mapped[date] = mapped_column(Date, nullable=False)
     sets_completed: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -131,6 +146,7 @@ class WorkoutLog(Base):
 
     user: Mapped[UserProfile] = relationship(back_populates="workout_logs")
     planned_exercise: Mapped["WorkoutExercise | None"] = relationship()
+    session: Mapped["WorkoutSession | None"] = relationship(back_populates="workout_logs")
 
 
 class Feedback(Base):
@@ -174,3 +190,84 @@ class WeeklyReview(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     user: Mapped[UserProfile] = relationship(back_populates="weekly_reviews")
+
+
+class WorkoutSession(Base):
+    __tablename__ = "workout_sessions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("user_profiles.id"), index=True)
+    workout_plan_id: Mapped[int | None] = mapped_column(ForeignKey("workout_plans.id"), nullable=True, index=True)
+    day_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    planned_for: Mapped[date | None] = mapped_column(Date, nullable=True)
+    status: Mapped[str] = mapped_column(String(30), default=WorkoutSessionStatus.active.value, index=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    session_rpe: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    notes: Mapped[str] = mapped_column(Text, default="")
+    completion_rate: Mapped[float] = mapped_column(Float, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    user: Mapped[UserProfile] = relationship(back_populates="workout_sessions")
+    plan: Mapped["WorkoutPlan | None"] = relationship()
+    readiness: Mapped["ReadinessCheckin | None"] = relationship(back_populates="session", cascade="all, delete-orphan")
+    exercises: Mapped[list["WorkoutSessionExercise"]] = relationship(back_populates="session", cascade="all, delete-orphan")
+    workout_logs: Mapped[list["WorkoutLog"]] = relationship(back_populates="session")
+
+
+class ReadinessCheckin(Base):
+    __tablename__ = "readiness_checkins"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    session_id: Mapped[int] = mapped_column(ForeignKey("workout_sessions.id"), unique=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("user_profiles.id"), index=True)
+    energy: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    sleep_quality: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    soreness: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    stress: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    pain: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    pain_notes: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    session: Mapped[WorkoutSession] = relationship(back_populates="readiness")
+
+
+class WorkoutSessionExercise(Base):
+    __tablename__ = "workout_session_exercises"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    session_id: Mapped[int] = mapped_column(ForeignKey("workout_sessions.id"), index=True)
+    planned_exercise_id: Mapped[int | None] = mapped_column(ForeignKey("workout_exercises.id"), nullable=True, index=True)
+    exercise_name: Mapped[str] = mapped_column(String(140), nullable=False)
+    order_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    target_sets: Mapped[int] = mapped_column(Integer, nullable=False)
+    target_reps: Mapped[str] = mapped_column(String(40), nullable=False)
+    target_weight_kg: Mapped[float] = mapped_column(Float, default=0)
+    status: Mapped[str] = mapped_column(String(30), default=SessionExerciseStatus.pending.value, index=True)
+    skip_reason: Mapped[str] = mapped_column(String(80), default="")
+    notes: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    session: Mapped[WorkoutSession] = relationship(back_populates="exercises")
+    planned_exercise: Mapped["WorkoutExercise | None"] = relationship()
+    sets: Mapped[list["PerformedSet"]] = relationship(back_populates="session_exercise", cascade="all, delete-orphan")
+
+
+class PerformedSet(Base):
+    __tablename__ = "performed_sets"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    session_exercise_id: Mapped[int] = mapped_column(ForeignKey("workout_session_exercises.id"), index=True)
+    workout_log_id: Mapped[int | None] = mapped_column(ForeignKey("workout_logs.id"), nullable=True, index=True)
+    set_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    reps: Mapped[int] = mapped_column(Integer, nullable=False)
+    weight_kg: Mapped[float] = mapped_column(Float, default=0)
+    perceived_effort: Mapped[int] = mapped_column(Integer, default=7)
+    completed: Mapped[bool] = mapped_column(default=True)
+    pain_flag: Mapped[bool] = mapped_column(default=False)
+    notes: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    session_exercise: Mapped[WorkoutSessionExercise] = relationship(back_populates="sets")
+    workout_log: Mapped["WorkoutLog | None"] = relationship()
