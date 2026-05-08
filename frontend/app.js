@@ -3,6 +3,7 @@ const ACTIVE_USER_KEY = "fitgen-active-user-id";
 const AUTH_TOKEN_KEY = "fitgen-auth-token";
 let selectedWorkoutDayIndex = null;
 let pendingAiWorkoutProposal = null;
+let activeSession = null;
 let currentDateKey = localDateKey();
 let dayRolloverTimer = null;
 
@@ -53,6 +54,7 @@ async function load() {
       }
       localStorage.setItem(ACTIVE_USER_KEY, String(profileId));
       state = await api(`/api/users/${profileId}/dashboard`);
+      await loadActiveSession();
       showApp();
       render();
       return;
@@ -71,12 +73,31 @@ async function load() {
 
   try {
     state = await api(`/api/users/${activeUserId}/dashboard`);
+    await loadActiveSession();
     showApp();
     render();
   } catch (error) {
     localStorage.removeItem(ACTIVE_USER_KEY);
     showOnboarding("Saved profile was not found. Create a new one or load the demo profile.");
   }
+}
+
+async function loadActiveSession() {
+  if (!state?.user?.id) {
+    activeSession = null;
+    return;
+  }
+  const response = await api(`/api/users/${state.user.id}/sessions/active`);
+  activeSession = response.session;
+  if (activeSession?.day_index) {
+    selectedWorkoutDayIndex = activeSession.day_index;
+  }
+}
+
+async function refreshDashboardAndSession() {
+  state = await api(`/api/users/${state.user.id}/dashboard`);
+  await loadActiveSession();
+  render();
 }
 
 function render() {
@@ -260,7 +281,7 @@ function renderWorkout() {
   const isReviewingAiPlan = Boolean(pendingAiWorkoutProposal);
   $("#sessionWorkspace").classList.toggle("hidden", isReviewingAiPlan);
   $("#logPanel").classList.toggle("hidden", isReviewingAiPlan);
-  $("#workoutModePill").textContent = isReviewingAiPlan ? "Review AI plan" : "Session ready";
+  $("#workoutModePill").textContent = isReviewingAiPlan ? "Review AI plan" : activeSession ? "Session active" : "Session ready";
   $("#workoutModePill").classList.toggle("reviewing", isReviewingAiPlan);
   if (!plan) {
     $("#daySelector").innerHTML = "<p>No workout plan yet.</p>";
@@ -275,6 +296,10 @@ function renderWorkout() {
   }
   if (!selectedWorkoutDayIndex || !plan.days.some((day, index) => index + 1 === selectedWorkoutDayIndex)) {
     selectedWorkoutDayIndex = pickWorkoutDay(plan.days);
+  }
+  if (activeSession) {
+    renderActiveSession();
+    return;
   }
   const selectedDay = plan.days[selectedWorkoutDayIndex - 1];
   const selectedDate = isoDateForPlanDay(plan.week_start, selectedWorkoutDayIndex);
@@ -303,6 +328,15 @@ function renderWorkout() {
         <p class="muted">${selectedDay.focus} | ${formatDateLong(selectedDate)}</p>
       </div>
       <span class="session-badge">${selectedDay.exercises.length} lifts queued</span>
+    </div>
+    <div class="readiness-card">
+      <div class="form-grid compact-grid">
+        <label>Energy<input id="readinessEnergy" type="number" min="1" max="10" value="7" /></label>
+        <label>Sleep<input id="readinessSleep" type="number" min="1" max="10" value="7" /></label>
+        <label>Soreness<input id="readinessSoreness" type="number" min="1" max="10" value="4" /></label>
+        <label>Pain<input id="readinessPain" type="number" min="0" max="10" value="0" /></label>
+      </div>
+      <button id="startSessionBtn" class="primary" type="button">Start this session</button>
     </div>
     ${selectedDay.exercises
       .map(
@@ -335,6 +369,7 @@ function renderWorkout() {
       renderWorkout();
     });
   });
+  $("#startSessionBtn").addEventListener("click", startSelectedSession);
   $$(".session-exercise-actions button").forEach((button) => {
     if (button.dataset.exerciseId) {
       button.addEventListener("click", () => {
@@ -366,6 +401,115 @@ function renderWorkout() {
     $("input[name='exercise_name']").value = firstExercise;
   }
   $("input[name='performed_on']").value = selectedDate;
+}
+
+function renderActiveSession() {
+  const plan = state.current_workout_plan;
+  const selectedDay = plan.days[(activeSession.day_index || selectedWorkoutDayIndex) - 1] || plan.days[0];
+  const completed = activeSession.exercises.filter((exercise) => exercise.status === "completed").length;
+  const skipped = activeSession.exercises.filter((exercise) => exercise.status === "skipped").length;
+  const pending = activeSession.exercises.length - completed - skipped;
+  $("#workoutTitle").textContent = plan.title;
+  $("#sessionMeta").textContent = `${selectedDay.day}, ${formatDateLong(activeSession.planned_for)} | active session`;
+  $("#sessionSummary").innerHTML = `
+    <span class="session-summary-chip done">${completed} done</span>
+    <span class="session-summary-chip skipped">${skipped} skipped</span>
+    <span class="session-summary-chip">${pending} pending</span>
+  `;
+  $("#daySelector").innerHTML = plan.days
+    .map(
+      (day, index) => `
+      <button type="button" class="day-pill ${activeSession.day_index === index + 1 ? "active" : ""}" disabled>
+        <strong>${day.day}</strong>
+        <span>${formatPlanDayDate(plan.week_start, index + 1)}</span>
+      </button>
+    `,
+    )
+    .join("");
+  $("#selectedDayPlan").innerHTML = `
+    <div class="session-day-head">
+      <div>
+        <h3>${selectedDay.day}</h3>
+        <p class="muted">Started ${formatDateLong(activeSession.planned_for)} | ${Math.round((activeSession.completion_rate || 0) * 100)}% complete</p>
+      </div>
+      <span class="session-badge">Backend session #${activeSession.id}</span>
+    </div>
+    ${(activeSession.safety || []).map((note) => `<p class="error">${escapeHtml(note)}</p>`).join("")}
+    ${activeSession.exercises
+      .map(
+        (exercise) => `
+        <article class="session-exercise">
+          <div class="session-exercise-top">
+            <div>
+              <strong>${escapeHtml(exercise.exercise_name)}</strong>
+              <p class="session-exercise-meta">${exercise.target_sets} sets x ${exercise.target_reps} reps | ${exercise.target_weight_kg || "bodyweight"} kg</p>
+            </div>
+            <div>
+              <span class="session-status ${exercise.status}">${labelExerciseStatus(exercise.status)}</span>
+            </div>
+          </div>
+          <div class="performed-set-list">
+            ${
+              exercise.sets.length
+                ? exercise.sets
+                    .map(
+                      (set) =>
+                        `<span class="session-summary-chip">Set ${set.set_number}: ${set.reps} reps, ${set.weight_kg} kg, RPE ${set.perceived_effort}${set.pain_flag ? " pain" : ""}</span>`,
+                    )
+                    .join("")
+                : `<p class="session-exercise-meta">${escapeHtml(exercise.notes || "No sets logged yet.")}</p>`
+            }
+          </div>
+          <div class="session-exercise-actions">
+            <button type="button" data-session-exercise-id="${exercise.id}" data-exercise-name="${escapeHtml(exercise.exercise_name)}" data-target-weight="${exercise.target_weight_kg || 0}" ${exercise.status === "skipped" ? "disabled" : ""}>Log set</button>
+            <button type="button" data-skip-exercise-id="${exercise.id}" data-skip-exercise-name="${escapeHtml(exercise.exercise_name)}" ${exercise.sets.length || exercise.status === "skipped" ? "disabled" : ""}>Skip</button>
+            <button type="button" data-ask-exercise-name="${escapeHtml(exercise.exercise_name)}">Ask AI</button>
+          </div>
+        </article>
+      `,
+      )
+      .join("")}
+  `;
+  $$(".session-exercise-actions button").forEach((button) => {
+    if (button.dataset.sessionExerciseId) {
+      button.addEventListener("click", () => {
+        loadSessionExerciseIntoLog(button.dataset.sessionExerciseId, button.dataset.exerciseName, button.dataset.targetWeight);
+      });
+    }
+    if (button.dataset.skipExerciseId) {
+      button.addEventListener("click", async () => {
+        await markExerciseSkipped(button.dataset.skipExerciseId, button.dataset.skipExerciseName);
+      });
+    }
+    if (button.dataset.askExerciseName) {
+      button.addEventListener("click", () => {
+        $("#exerciseQuestionName").value = button.dataset.askExerciseName;
+        $("#exerciseQuestionInput").focus();
+      });
+    }
+  });
+  $("#finishSessionBtn").disabled = pending > 0;
+  $("#finishSessionMessage").textContent = pending > 0 ? "Finish unlocks after every exercise is completed or skipped." : "Session is ready to finish.";
+  $("input[name='performed_on']").value = activeSession.planned_for || localDateKey();
+}
+
+async function startSelectedSession() {
+  const response = await api(`/api/users/${state.user.id}/sessions/start`, {
+    method: "POST",
+    body: JSON.stringify({
+      workout_plan_id: state.current_workout_plan.id,
+      day_index: selectedWorkoutDayIndex,
+      planned_for: isoDateForPlanDay(state.current_workout_plan.week_start, selectedWorkoutDayIndex),
+      readiness: {
+        energy: Number($("#readinessEnergy").value || 7),
+        sleep_quality: Number($("#readinessSleep").value || 7),
+        soreness: Number($("#readinessSoreness").value || 4),
+        pain: Number($("#readinessPain").value || 0),
+      },
+    }),
+  });
+  activeSession = response.session;
+  renderWorkout();
 }
 
 function renderDiet() {
@@ -505,9 +649,20 @@ function pickWorkoutDay(days) {
 
 function loadExerciseIntoLog(exerciseId, exerciseName, targetWeight) {
   $("input[name='planned_exercise_id']").value = exerciseId;
+  $("input[name='session_exercise_id']").value = "";
   $("input[name='exercise_name']").value = exerciseName;
   $("input[name='weight_kg']").value = Number(targetWeight || 0);
   $("#selectedExercise").textContent = `Logging planned exercise: ${exerciseName}`;
+  document.querySelector("#logForm").scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
+function loadSessionExerciseIntoLog(sessionExerciseId, exerciseName, targetWeight) {
+  $("input[name='planned_exercise_id']").value = "";
+  $("input[name='session_exercise_id']").value = sessionExerciseId;
+  $("input[name='exercise_name']").value = exerciseName;
+  $("input[name='sets_completed']").value = 1;
+  $("input[name='weight_kg']").value = Number(targetWeight || 0);
+  $("#selectedExercise").textContent = `Logging one set for active session: ${exerciseName}`;
   document.querySelector("#logForm").scrollIntoView({ behavior: "smooth", block: "center" });
 }
 
@@ -670,6 +825,15 @@ function startDayRolloverWatcher() {
 }
 
 async function markExerciseSkipped(exerciseId, exerciseName) {
+  if (activeSession) {
+    const response = await api(`/api/sessions/${activeSession.id}/exercises/${exerciseId}/skip`, {
+      method: "POST",
+      body: JSON.stringify({ reason: "user_skipped", notes: "" }),
+    });
+    activeSession = response.session;
+    await refreshDashboardAndSession();
+    return;
+  }
   const performedOn = state.current_workout_plan
     ? isoDateForPlanDay(state.current_workout_plan.week_start, selectedWorkoutDayIndex || pickWorkoutDay(state.current_workout_plan.days))
     : localDateKey();
@@ -686,8 +850,7 @@ async function markExerciseSkipped(exerciseId, exerciseName) {
       perceived_effort: 3,
     }),
   });
-  state = await api(`/api/users/${state.user.id}/dashboard`);
-  render();
+  await refreshDashboardAndSession();
 }
 
 function setAuthMode(mode) {
@@ -819,14 +982,12 @@ $("#signupBackBtn").addEventListener("click", () => {
 $("#planBtn").addEventListener("click", async () => {
   await api(`/api/users/${state.user.id}/plans/weekly`, { method: "POST" });
   pendingAiWorkoutProposal = null;
-  state = await api(`/api/users/${state.user.id}/dashboard`);
-  render();
+  await refreshDashboardAndSession();
 });
 
 $("#reviewBtn").addEventListener("click", async () => {
   await api(`/api/users/${state.user.id}/weekly-review`, { method: "POST" });
-  state = await api(`/api/users/${state.user.id}/dashboard`);
-  render();
+  await refreshDashboardAndSession();
 });
 
 $("#profileForm").addEventListener("submit", async (event) => {
@@ -840,6 +1001,7 @@ $("#profileForm").addEventListener("submit", async (event) => {
     localStorage.setItem(AUTH_TOKEN_KEY, session.token);
     localStorage.setItem(ACTIVE_USER_KEY, String(session.profile.id));
     state = await api(`/api/users/${session.profile.id}/dashboard`);
+    await loadActiveSession();
     showApp();
     render();
   } catch (error) {
@@ -853,6 +1015,7 @@ $("#demoBtn").addEventListener("click", async () => {
   const data = await api("/api/bootstrap");
   localStorage.setItem(ACTIVE_USER_KEY, String(data.user.id));
   state = data;
+  await loadActiveSession();
   showApp();
   render();
 });
@@ -861,6 +1024,7 @@ $("#switchProfileBtn").addEventListener("click", () => {
   localStorage.removeItem(AUTH_TOKEN_KEY);
   localStorage.removeItem(ACTIVE_USER_KEY);
   state = null;
+  activeSession = null;
   showOnboarding();
 });
 
@@ -881,6 +1045,7 @@ $("#loginBtn").addEventListener("click", async () => {
     localStorage.setItem(AUTH_TOKEN_KEY, session.token);
     localStorage.setItem(ACTIVE_USER_KEY, String(session.profile.id));
     state = await api(`/api/users/${session.profile.id}/dashboard`);
+    await loadActiveSession();
     showApp();
     render();
   } catch (error) {
@@ -893,11 +1058,32 @@ $("#logForm").addEventListener("submit", async (event) => {
   event.preventDefault();
   const form = new FormData(event.currentTarget);
   const payload = Object.fromEntries(form.entries());
+  const sessionExerciseId = payload.session_exercise_id ? Number(payload.session_exercise_id) : null;
+  if (activeSession && sessionExerciseId) {
+    await api(`/api/sessions/${activeSession.id}/exercises/${sessionExerciseId}/sets`, {
+      method: "POST",
+      body: JSON.stringify({
+        reps: Number(payload.reps_completed),
+        weight_kg: Number(payload.weight_kg),
+        perceived_effort: Number(payload.perceived_effort),
+        completed: form.get("completed") === "on",
+        pain_flag: form.get("pain_flag") === "on",
+        notes: "",
+      }),
+    });
+    $("input[name='session_exercise_id']").value = "";
+    $("input[name='pain_flag']").checked = false;
+    $("#selectedExercise").textContent = "";
+    await refreshDashboardAndSession();
+    return;
+  }
   payload.sets_completed = Number(payload.sets_completed);
   payload.reps_completed = Number(payload.reps_completed);
   payload.weight_kg = Number(payload.weight_kg);
   payload.perceived_effort = Number(payload.perceived_effort);
   payload.planned_exercise_id = payload.planned_exercise_id ? Number(payload.planned_exercise_id) : null;
+  delete payload.session_exercise_id;
+  delete payload.pain_flag;
   payload.completed = form.get("completed") === "on";
   await api(`/api/users/${state.user.id}/workouts/logs`, {
     method: "POST",
@@ -905,11 +1091,24 @@ $("#logForm").addEventListener("submit", async (event) => {
   });
   $("input[name='planned_exercise_id']").value = "";
   $("#selectedExercise").textContent = "";
-  state = await api(`/api/users/${state.user.id}/dashboard`);
-  render();
+  await refreshDashboardAndSession();
 });
 
-$("#finishSessionBtn").addEventListener("click", () => {
+$("#finishSessionBtn").addEventListener("click", async () => {
+  if (activeSession) {
+    try {
+      const response = await api(`/api/sessions/${activeSession.id}/finish`, {
+        method: "POST",
+        body: JSON.stringify({ session_rpe: null, notes: "" }),
+      });
+      activeSession = response.session.status === "active" ? response.session : null;
+      $("#finishSessionMessage").textContent = "Session finished. Dashboard updated from set-level logs.";
+      await refreshDashboardAndSession();
+    } catch (error) {
+      $("#finishSessionMessage").textContent = error.message;
+    }
+    return;
+  }
   const day = state.current_workout_plan.days[selectedWorkoutDayIndex - 1];
   const summary = summarizeDay(day);
   $("#finishSessionMessage").textContent = sessionMessage(summary);
@@ -975,9 +1174,8 @@ async function acceptAiPlan() {
       body: JSON.stringify(pendingAiWorkoutProposal.proposal),
     });
     pendingAiWorkoutProposal = null;
-    state = await api(`/api/users/${state.user.id}/dashboard`);
     selectedWorkoutDayIndex = null;
-    render();
+    await refreshDashboardAndSession();
     $("#aiPlanStatus").textContent = "Accepted. Your session flow is now using this plan.";
   } catch (error) {
     $("#aiPlanStatus").textContent = error.message;

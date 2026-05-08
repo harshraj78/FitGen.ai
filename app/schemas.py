@@ -53,6 +53,41 @@ class WorkoutLogCreate(BaseModel):
     perceived_effort: int = Field(default=7, ge=1, le=10)
 
 
+class ReadinessCheckinCreate(BaseModel):
+    energy: int | None = Field(default=None, ge=1, le=10)
+    sleep_quality: int | None = Field(default=None, ge=1, le=10)
+    soreness: int | None = Field(default=None, ge=1, le=10)
+    stress: int | None = Field(default=None, ge=1, le=10)
+    pain: int | None = Field(default=None, ge=0, le=10)
+    pain_notes: str = Field(default="", max_length=1000)
+
+
+class WorkoutSessionStart(BaseModel):
+    workout_plan_id: int | None = None
+    day_index: int | None = Field(default=None, ge=1, le=7)
+    planned_for: date | None = None
+    readiness: ReadinessCheckinCreate | None = None
+
+
+class PerformedSetCreate(BaseModel):
+    reps: int = Field(ge=0, le=100)
+    weight_kg: float = Field(ge=0, le=500)
+    perceived_effort: int = Field(default=7, ge=1, le=10)
+    completed: bool = True
+    pain_flag: bool = False
+    notes: str = Field(default="", max_length=1000)
+
+
+class SessionExerciseSkip(BaseModel):
+    reason: str = Field(default="other", max_length=80)
+    notes: str = Field(default="", max_length=1000)
+
+
+class WorkoutSessionFinish(BaseModel):
+    session_rpe: int | None = Field(default=None, ge=1, le=10)
+    notes: str = Field(default="", max_length=2000)
+
+
 class FeedbackCreate(BaseModel):
     signal: str
     message: str = ""

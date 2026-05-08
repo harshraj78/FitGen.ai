@@ -327,12 +327,14 @@
             <form id="logForm" class="form-grid">
               <label>Exercise<input name="exercise_name" required /></label>
               <input name="planned_exercise_id" type="hidden" />
+              <input name="session_exercise_id" type="hidden" />
               <label>Date<input name="performed_on" type="date" required /></label>
-              <label>Sets<input name="sets_completed" type="number" min="0" max="20" value="3" /></label>
-              <label>Reps<input name="reps_completed" type="number" min="0" max="300" value="30" /></label>
+              <label id="setsField">Sets<input name="sets_completed" type="number" min="0" max="20" value="3" /></label>
+              <label>Reps<input name="reps_completed" type="number" min="0" max="300" value="10" /></label>
               <label>Weight kg<input name="weight_kg" type="number" min="0" step="0.5" value="20" /></label>
               <label>Effort<input name="perceived_effort" type="number" min="1" max="10" value="7" /></label>
               <label class="check"><input name="completed" type="checkbox" checked /> Completed</label>
+              <label class="check"><input name="pain_flag" type="checkbox" /> Pain flag</label>
               <button class="primary" type="submit">Save log</button>
             </form>
             <p id="selectedExercise" class="muted"></p>
