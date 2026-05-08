@@ -10,6 +10,7 @@ FitGen AI is a production-grade starter system for adaptive personal fitness pla
 - Stateful user profile, workout plans, workout sessions, set-level logs, feedback, diet plans, and weekly reviews
 - Rule-based workout planner with equipment fallback and progressive overload
 - Session Engine with readiness check-ins, partial session recovery, skipped exercises, and set-by-set performance capture
+- Normalized exercise catalog with canonical exercise IDs, aliases, substitutions, movement patterns, and equipment metadata
 - Hybrid LLM hook for coach-style plan summaries when `OPENAI_API_KEY` is set
 - India-friendly diet planner with budget and vegetarian/non-vegetarian constraints
 - Clean dashboard UI with progress charts, workout logging, diet budget breakdown, feedback, and exportable weekly report
@@ -76,6 +77,8 @@ The first migration creates users, workout plans, workout exercises, workout log
 
 New session flows write set-level records and also maintain aggregate `workout_logs` rows for dashboard and weekly-review compatibility.
 
+Exercise normalization adds `exercises`, `exercise_aliases`, and `exercise_substitutions`. Existing name-based workout history remains valid, while new planned and session exercises can also link to canonical `exercise_id` values.
+
 ## Optional LLM Enrichment
 
 The adaptive logic works without an LLM. To add concise coach-style reasoning summaries:
@@ -109,6 +112,10 @@ This keeps the existing MVP analytics stable while preparing the system for rich
 - `workout_logs` remains as a compatibility summary table used by the dashboard, reports, and weekly review.
 
 The frontend now supports starting a session, logging individual sets, skipping remaining exercises, finishing only after all exercises are resolved, and recovering an active session after page refresh.
+
+## Exercise Catalog
+
+FitGen keeps exercise names for user-facing display, but v2 also stores canonical exercise records. This gives future adaptation logic a stable identity for movement patterns, substitutions, equipment-aware fallbacks, and pain-aware rules without breaking older logs that only have `exercise_name`.
 
 This is suitable for a product prototype. Before public deployment, add token expiry, refresh/revocation policy, HTTPS-only hosting, and stronger account recovery flows.
 

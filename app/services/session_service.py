@@ -56,6 +56,7 @@ class WorkoutSessionService:
                 models.WorkoutSessionExercise(
                     session_id=session.id,
                     planned_exercise_id=exercise.id,
+                    exercise_id=exercise.exercise_id,
                     exercise_name=exercise.exercise_name,
                     order_index=index,
                     target_sets=exercise.sets,
@@ -286,6 +287,7 @@ class WorkoutSessionService:
         return {
             "id": exercise.id,
             "planned_exercise_id": exercise.planned_exercise_id,
+            "exercise_id": exercise.exercise_id,
             "exercise_name": exercise.exercise_name,
             "order_index": exercise.order_index,
             "target_sets": exercise.target_sets,
