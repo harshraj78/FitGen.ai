@@ -7,3 +7,8 @@ fitgen_*_test.db
 *.log
 .venv/
 venv/
+node_modules/
+dist/
+*.tsbuildinfo
+frontend-modern/vite.config.js
+frontend-modern/vite.config.d.ts
