@@ -123,6 +123,7 @@
       <button id="navToggleBtn" class="nav-toggle" type="button" aria-label="Open navigation" aria-expanded="false">☰</button>
       <div id="navScrim" class="nav-scrim"></div>
       <aside class="nav-rail" aria-label="Quick navigation">
+        <button class="rail-tab" data-view="business" type="button" title="Business">B</button>
         <button class="rail-tab active" data-view="dashboard" type="button" title="Dashboard">D</button>
         <button class="rail-tab" data-view="trainer" type="button" title="Trainer">T</button>
         <button class="rail-tab" data-view="workout" type="button" title="Workout">W</button>
@@ -135,6 +136,7 @@
           <h1>Adaptive trainer system</h1>
         </div>
         <nav class="tabs" aria-label="Primary">
+          <button class="tab" data-view="business">Business</button>
           <button class="tab active" data-view="dashboard">Dashboard</button>
           <button class="tab" data-view="trainer">Trainer</button>
           <button class="tab" data-view="workout">Workout</button>
@@ -146,6 +148,10 @@
       </aside>
 
       <section class="content">
+        <section class="view" id="business">
+          <div id="businessDashboardRoot"></div>
+        </section>
+
         <section class="view active" id="dashboard">
           <div class="topbar">
             <div>
