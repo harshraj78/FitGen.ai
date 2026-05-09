@@ -120,6 +120,10 @@ class NotificationEventType(str, Enum):
     ai_plan_pending_review = "ai_plan_pending_review"
     plan_approved = "plan_approved"
     payment_received = "payment_received"
+    renewal_risk_detected = "renewal_risk_detected"
+    trainer_follow_up_due = "trainer_follow_up_due"
+    stalled_progress = "stalled_progress"
+    inactive_member = "inactive_member"
 
 
 class NotificationChannel(str, Enum):
@@ -127,6 +131,28 @@ class NotificationChannel(str, Enum):
     email = "email"
     whatsapp = "whatsapp"
     push = "push"
+
+
+class RenewalRiskLevel(str, Enum):
+    low = "low"
+    medium = "medium"
+    high = "high"
+    critical = "critical"
+
+
+class RetentionWorkflowType(str, Enum):
+    inactive_member_alert = "inactive_member_alert"
+    trainer_follow_up_reminder = "trainer_follow_up_reminder"
+    pending_trainer_approval = "pending_trainer_approval"
+    renewal_reminder = "renewal_reminder"
+    stalled_progress_alert = "stalled_progress_alert"
+    high_churn_risk = "high_churn_risk"
+
+
+class RetentionWorkflowStatus(str, Enum):
+    open = "open"
+    completed = "completed"
+    dismissed = "dismissed"
 
 
 class Account(Base):
@@ -197,6 +223,9 @@ class UserProfile(Base):
     payments: Mapped[list["Payment"]] = relationship(back_populates="member", cascade="all, delete-orphan")
     attendance_checkins: Mapped[list["AttendanceCheckin"]] = relationship(back_populates="member", cascade="all, delete-orphan")
     goals: Mapped[list["Goal"]] = relationship(back_populates="member", cascade="all, delete-orphan")
+    renewal_risk_snapshots: Mapped[list["RenewalRiskSnapshot"]] = relationship(back_populates="member", cascade="all, delete-orphan")
+    body_metric_snapshots: Mapped[list["BodyMetricSnapshot"]] = relationship(back_populates="member", cascade="all, delete-orphan")
+    transformation_milestones: Mapped[list["TransformationMilestone"]] = relationship(back_populates="member", cascade="all, delete-orphan")
 
 
 class WorkoutPlan(Base):
@@ -247,6 +276,10 @@ class Organization(Base):
     goals: Mapped[list["Goal"]] = relationship(back_populates="organization", cascade="all, delete-orphan")
     workout_plans: Mapped[list[WorkoutPlan]] = relationship(back_populates="organization")
     notification_events: Mapped[list["NotificationEvent"]] = relationship(back_populates="organization", cascade="all, delete-orphan")
+    renewal_risk_snapshots: Mapped[list["RenewalRiskSnapshot"]] = relationship(back_populates="organization", cascade="all, delete-orphan")
+    retention_workflows: Mapped[list["RetentionWorkflow"]] = relationship(back_populates="organization", cascade="all, delete-orphan")
+    body_metric_snapshots: Mapped[list["BodyMetricSnapshot"]] = relationship(back_populates="organization", cascade="all, delete-orphan")
+    transformation_milestones: Mapped[list["TransformationMilestone"]] = relationship(back_populates="organization", cascade="all, delete-orphan")
 
 
 class OrganizationMembership(Base):
@@ -450,6 +483,91 @@ class NotificationPreference(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
     account: Mapped[Account] = relationship()
+
+
+class RenewalRiskSnapshot(Base):
+    __tablename__ = "renewal_risk_snapshots"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"), index=True)
+    member_id: Mapped[int] = mapped_column(ForeignKey("user_profiles.id"), index=True)
+    membership_id: Mapped[int | None] = mapped_column(ForeignKey("member_memberships.id"), nullable=True, index=True)
+    score: Mapped[float] = mapped_column(Float, nullable=False, index=True)
+    level: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    signals_json: Mapped[str] = mapped_column(Text, default="[]")
+    forecast_renewal_on: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
+    revenue_at_risk: Mapped[float] = mapped_column(Float, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
+
+    organization: Mapped[Organization] = relationship(back_populates="renewal_risk_snapshots")
+    member: Mapped[UserProfile] = relationship(back_populates="renewal_risk_snapshots")
+    membership: Mapped["MemberMembership | None"] = relationship()
+
+
+class RetentionWorkflow(Base):
+    __tablename__ = "retention_workflows"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"), index=True)
+    member_id: Mapped[int] = mapped_column(ForeignKey("user_profiles.id"), index=True)
+    assigned_account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"), nullable=True, index=True)
+    workflow_type: Mapped[str] = mapped_column(String(60), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(30), default=RetentionWorkflowStatus.open.value, index=True)
+    priority: Mapped[str] = mapped_column(String(20), default="medium", index=True)
+    title: Mapped[str] = mapped_column(String(180), nullable=False)
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    due_on: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
+    source_entity_type: Mapped[str] = mapped_column(String(80), default="")
+    source_entity_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    metadata_json: Mapped[str] = mapped_column(Text, default="{}")
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    organization: Mapped[Organization] = relationship(back_populates="retention_workflows")
+    member: Mapped[UserProfile] = relationship()
+    assigned_account: Mapped["Account | None"] = relationship()
+
+
+class BodyMetricSnapshot(Base):
+    __tablename__ = "body_metric_snapshots"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"), index=True)
+    member_id: Mapped[int] = mapped_column(ForeignKey("user_profiles.id"), index=True)
+    measured_on: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    weight_kg: Mapped[float | None] = mapped_column(Float, nullable=True)
+    body_fat_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    waist_cm: Mapped[float | None] = mapped_column(Float, nullable=True)
+    chest_cm: Mapped[float | None] = mapped_column(Float, nullable=True)
+    hip_cm: Mapped[float | None] = mapped_column(Float, nullable=True)
+    notes: Mapped[str] = mapped_column(Text, default="")
+    recorded_by_account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    organization: Mapped[Organization] = relationship(back_populates="body_metric_snapshots")
+    member: Mapped[UserProfile] = relationship(back_populates="body_metric_snapshots")
+    recorded_by: Mapped["Account | None"] = relationship()
+
+
+class TransformationMilestone(Base):
+    __tablename__ = "transformation_milestones"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"), index=True)
+    member_id: Mapped[int] = mapped_column(ForeignKey("user_profiles.id"), index=True)
+    trainer_account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"), nullable=True, index=True)
+    milestone_type: Mapped[str] = mapped_column(String(60), nullable=False, index=True)
+    title: Mapped[str] = mapped_column(String(180), nullable=False)
+    achieved_on: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    value: Mapped[float | None] = mapped_column(Float, nullable=True)
+    unit: Mapped[str] = mapped_column(String(40), default="")
+    notes: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    organization: Mapped[Organization] = relationship(back_populates="transformation_milestones")
+    member: Mapped[UserProfile] = relationship(back_populates="transformation_milestones")
+    trainer: Mapped["Account | None"] = relationship()
 
 
 class AIExplainabilityRecord(Base):

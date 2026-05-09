@@ -1,20 +1,27 @@
-# FitGen AI
+# FitGen.ai
 
-FitGen AI is a production-grade starter system for adaptive personal fitness planning. It is not a chatbot: the backend keeps persistent user state, tracks workout history, adapts plans from feedback, and generates India-friendly diet plans within budget constraints.
+FitGen.ai is evolving into an AI-powered gym retention and coaching operating platform for multi-tenant B2B gym operations. The product focus is business-first: retention intelligence, renewal forecasting, revenue operations, trainer performance, operational follow-up workflows, and transformation tracking.
+
+The coaching engine still supports adaptive workout and diet planning, but AI now assists gym teams instead of replacing them. The system is designed to help gym owners and trainers answer the daily operating question: "Which members need action today?"
 
 ## What It Includes
 
 - FastAPI backend with SQLAlchemy persistence
 - PostgreSQL-ready configuration through `DATABASE_URL`
 - SQLite default for local demos
-- Stateful user profile, workout plans, workout sessions, set-level logs, feedback, diet plans, and weekly reviews
+- Multi-tenant organizations with RBAC roles for gym owners, admins, trainers, nutritionists, members, and super admins
+- Org-scoped members, trainer assignments, membership plans, memberships, payments, attendance, goals, and audit logs
+- Renewal risk scoring using attendance decline, missed workouts, inactivity, adherence drop, goal stagnation, expired memberships, and trainer engagement gaps
+- Revenue operations analytics for MRR, active memberships, expiring memberships, unpaid members, renewal trends, retention trends, and churn-risk summaries
+- Trainer performance analytics for retention rate, adherence, goal success, active clients, consistency trends, overdue approvals, inactive clients, and high-risk clients
+- Retention workflow foundation for inactive member alerts, renewal reminders, trainer follow-ups, pending approval actions, stalled progress alerts, and high churn-risk queues
+- Transformation tracking with body metric snapshots, strength progression, consistency improvement, goal history, and transformation milestones
+- Stateful workout plans, workout sessions, set-level logs, feedback, diet plans, and weekly reviews
 - Rule-based workout planner with equipment fallback and progressive overload
 - Session Engine with readiness check-ins, partial session recovery, skipped exercises, and set-by-set performance capture
 - Normalized exercise catalog with canonical exercise IDs, aliases, substitutions, movement patterns, and equipment metadata
 - Hybrid LLM hook for coach-style plan summaries when `OPENAI_API_KEY` is set
 - India-friendly diet planner with budget and vegetarian/non-vegetarian constraints
-- Clean dashboard UI with progress charts, workout logging, diet budget breakdown, feedback, and exportable weekly report
-- Demo data seeding endpoint for quick product walkthroughs
 
 ## Run Locally
 
@@ -79,6 +86,25 @@ New session flows write set-level records and also maintain aggregate `workout_l
 
 Exercise normalization adds `exercises`, `exercise_aliases`, and `exercise_substitutions`. Existing name-based workout history remains valid, while new planned and session exercises can also link to canonical `exercise_id` values.
 
+## Business Operations APIs
+
+The B2B operating layer is exposed under organization-scoped API routes:
+
+- `GET /api/organizations/{organization_id}/business/dashboard` returns a gym-owner dashboard with revenue, renewal forecast, trainer performance, daily actions, and at-risk members.
+- `GET /api/organizations/{organization_id}/business/retention/renewal-risk` returns members most likely to not renew.
+- `GET /api/organizations/{organization_id}/business/retention/forecast` forecasts expiring memberships, expected renewals, and revenue at risk.
+- `POST /api/organizations/{organization_id}/business/retention/risks/refresh` persists renewal risk snapshots for auditability and trend tracking.
+- `GET /api/organizations/{organization_id}/business/revenue` returns MRR, active memberships, unpaid members, renewal trends, retention trends, and churn-risk summaries.
+- `GET /api/organizations/{organization_id}/business/trainers/performance` compares trainer effectiveness for gym owners.
+- `GET /api/organizations/{organization_id}/business/actions/today` returns the operational action queue.
+- `GET /api/organizations/{organization_id}/business/actions/by-type/{workflow_type}` returns focused queues such as inactive members, overdue renewals, pending approvals, stalled progress, and high-risk churn.
+- `POST /api/organizations/{organization_id}/business/members/{member_id}/body-metrics` records transformation body metrics.
+- `POST /api/organizations/{organization_id}/business/members/{member_id}/transformation-milestones` records transformation milestones.
+- `GET /api/organizations/{organization_id}/business/members/{member_id}/transformation` returns member transformation summaries.
+- `GET /api/organizations/{organization_id}/business/transformations/gym` returns gym-wide transformation metrics.
+
+These routes use existing organization RBAC helpers. Gym-wide business views require owner/admin access, while trainer-facing queues and trainer performance endpoints are scoped to the authenticated trainer where appropriate.
+
 ## Optional LLM Enrichment
 
 The adaptive logic works without an LLM. To add concise coach-style reasoning summaries:
@@ -121,8 +147,15 @@ This is suitable for a product prototype. Before public deployment, add token ex
 
 ## API Highlights
 
+- `GET /api/organizations/{organization_id}/business/dashboard` returns the gym-owner operating dashboard
+- `GET /api/organizations/{organization_id}/business/actions/today` returns operational daily actions
+- `GET /api/organizations/{organization_id}/business/revenue` returns revenue operations metrics
+- `GET /api/organizations/{organization_id}/business/trainers/performance` compares trainer effectiveness
+- `GET /api/organizations/{organization_id}/business/retention/forecast` returns renewal forecast analytics
+- `GET /api/organizations/{organization_id}/trainer/clients` returns trainer-assigned clients
+- `GET /api/organizations/{organization_id}/trainer/plan-approvals/pending` returns pending trainer approvals
 - `GET /api/bootstrap` creates and returns a demo user
-- `GET /api/users/{user_id}/dashboard` returns the full dashboard payload
+- `GET /api/users/{user_id}/dashboard` returns the legacy member dashboard payload
 - `POST /api/users/{user_id}/plans/weekly` generates a new weekly plan
 - `POST /api/users/{user_id}/sessions/start` starts or resumes an active workout session
 - `GET /api/users/{user_id}/sessions/active` returns the in-progress session for refresh recovery
@@ -139,19 +172,31 @@ This is suitable for a product prototype. Before public deployment, add token ex
 
 ```mermaid
 flowchart LR
-    U["User Dashboard"] --> API["FastAPI API"]
+    OWNER["Gym Owner Dashboard"] --> API["FastAPI API"]
+    TRAINER["Trainer Workspace"] --> API
+    MEMBER["Member Coaching UI"] --> API
     API --> DB[("PostgreSQL / SQLite")]
+    API --> RI["Retention Intelligence"]
+    API --> RO["Revenue Operations"]
+    API --> TP["Trainer Performance"]
+    API --> RA["Retention Automation"]
+    API --> TS["Transformation Tracking"]
     API --> WP["Workout Planner"]
     API --> SE["Session Engine"]
     API --> DP["Diet Planner"]
-    API --> FR["Feedback Loop"]
-    API --> WR["Weekly Review"]
+    API --> N["Notifications"]
+    RI --> DB
+    RO --> DB
+    TP --> DB
+    RA --> N
+    RA --> DB
+    TS --> DB
     WP --> DB
     SE --> DB
     SE --> WL["Aggregate workout_logs"]
     WL --> DB
     DP --> DB
-    FR --> WP
-    WR --> WP
     API -. optional .-> LLM["OpenAI / Local LLM"]
 ```
+
+The architecture keeps business operations separate from coaching generation. Retention, revenue, trainer performance, automation, and transformation services aggregate existing org-scoped data and can scale toward background jobs, materialized snapshots, and external channels such as email, WhatsApp, and push notifications.

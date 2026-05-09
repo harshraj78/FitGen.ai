@@ -410,6 +410,180 @@ class GymAnalyticsOut(BaseModel):
     trainer_performance: list[TrainerAnalyticsOut]
 
 
+class RenewalRiskSignal(BaseModel):
+    code: str
+    severity: str
+    message: str
+    contribution: float
+
+
+class RenewalRiskOut(BaseModel):
+    member: MemberMiniOut
+    membership: MembershipSummary
+    score: float
+    level: str
+    signals: list[RenewalRiskSignal]
+    forecast_renewal_on: date | None = None
+    revenue_at_risk: float
+    generated_at: datetime | None = None
+
+
+class RenewalForecastOut(BaseModel):
+    organization_id: int
+    window_days: int
+    expiring_memberships: int
+    high_risk_renewals: int
+    forecast_revenue: float
+    revenue_at_risk: float
+    expected_renewals: int
+    renewal_probability: float
+    at_risk_members: list[RenewalRiskOut]
+
+
+class RevenueTrendPoint(BaseModel):
+    period: str
+    revenue: float = 0
+    renewals: int = 0
+    expired: int = 0
+    churned: int = 0
+
+
+class UnpaidMemberOut(BaseModel):
+    member: MemberMiniOut
+    amount_due: float
+    oldest_due_on: date | None = None
+    overdue_payments: int
+
+
+class RevenueOperationsOut(BaseModel):
+    organization_id: int
+    monthly_recurring_revenue: float
+    active_memberships: int
+    expiring_memberships_30d: int
+    unpaid_members: list[UnpaidMemberOut]
+    overdue_revenue: float
+    renewal_trends: list[RevenueTrendPoint]
+    retention_trends: list[RevenueTrendPoint]
+    churn_risk_summary: dict[str, int]
+
+
+class TrainerPerformanceOut(BaseModel):
+    trainer_account_id: int
+    trainer_email: str | None = None
+    active_client_count: int
+    client_retention_rate: float
+    avg_client_adherence: float
+    goal_success_rate: float
+    consistency_trend: float
+    overdue_approvals: int
+    inactive_clients: int
+    high_risk_clients: int
+
+
+class TrainerPerformanceComparisonOut(BaseModel):
+    organization_id: int
+    trainers: list[TrainerPerformanceOut]
+
+
+class RetentionWorkflowOut(BaseModel):
+    id: int | None = None
+    organization_id: int
+    member: MemberMiniOut
+    assigned_account_id: int | None = None
+    workflow_type: str
+    status: str = "open"
+    priority: str
+    title: str
+    message: str
+    due_on: date | None = None
+    source_entity_type: str = ""
+    source_entity_id: int | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime | None = None
+
+
+class OperationalDailyActionsOut(BaseModel):
+    organization_id: int
+    actions: list[RetentionWorkflowOut]
+    summary: dict[str, int]
+
+
+class BodyMetricSnapshotCreate(BaseModel):
+    measured_on: date
+    weight_kg: float | None = Field(default=None, ge=20, le=400)
+    body_fat_pct: float | None = Field(default=None, ge=1, le=80)
+    waist_cm: float | None = Field(default=None, ge=30, le=250)
+    chest_cm: float | None = Field(default=None, ge=30, le=250)
+    hip_cm: float | None = Field(default=None, ge=30, le=250)
+    notes: str = Field(default="", max_length=2000)
+
+
+class BodyMetricSnapshotOut(BodyMetricSnapshotCreate):
+    id: int
+    organization_id: int
+    member_id: int
+    recorded_by_account_id: int | None = None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class TransformationMilestoneCreate(BaseModel):
+    milestone_type: str = Field(min_length=2, max_length=60)
+    title: str = Field(min_length=2, max_length=180)
+    achieved_on: date
+    value: float | None = None
+    unit: str = Field(default="", max_length=40)
+    notes: str = Field(default="", max_length=2000)
+
+
+class TransformationMilestoneOut(TransformationMilestoneCreate):
+    id: int
+    organization_id: int
+    member_id: int
+    trainer_account_id: int | None = None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class TransformationSummaryOut(BaseModel):
+    member: MemberMiniOut
+    body_metric_improvements: dict[str, float | None]
+    strength_progression: list[dict[str, Any]]
+    consistency_improvement: float
+    goal_completion_history: list[dict[str, Any]]
+    milestones: list[TransformationMilestoneOut]
+
+
+class TrainerTransformationOut(BaseModel):
+    trainer_account_id: int
+    active_clients: int
+    clients_with_improvements: int
+    avg_consistency_improvement: float
+    goal_success_rate: float
+    milestones_90d: int
+
+
+class GymTransformationOut(BaseModel):
+    organization_id: int
+    members_tracked: int
+    members_with_body_improvements: int
+    avg_consistency_improvement: float
+    goal_completion_pct: float
+    milestones_90d: int
+    trainer_success: list[TrainerTransformationOut]
+
+
+class BusinessDashboardOut(BaseModel):
+    organization_id: int
+    revenue: RevenueOperationsOut
+    renewal_forecast: RenewalForecastOut
+    trainer_performance: list[TrainerPerformanceOut]
+    daily_actions: OperationalDailyActionsOut
+    at_risk_members: list[RenewalRiskOut]
+
+
 class NotificationOut(BaseModel):
     id: int
     organization_id: int | None = None
