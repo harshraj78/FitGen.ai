@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app import models, schemas
 from app.db import get_db, init_db
+from app.routes.organizations import router as organization_router
 from app.routes.sessions import router as session_router
 from app.services.auth import account_dict, create_session, get_account_from_authorization, hash_password, normalize_email, verify_password
 from app.services.diet_planner import DietPlanner
@@ -28,6 +29,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+app.include_router(organization_router, prefix="/api")
 app.include_router(session_router, prefix="/api")
 
 
@@ -373,6 +375,11 @@ def _user_dict(user: models.UserProfile) -> dict:
     return {
         "id": user.id,
         "account_id": user.account_id,
+        "organization_id": user.organization_id,
+        "assigned_trainer_id": user.assigned_trainer_id,
+        "member_code": user.member_code,
+        "status": user.status,
+        "joined_on": user.joined_on.isoformat() if user.joined_on else None,
         "name": user.name,
         "age": user.age,
         "height_cm": user.height_cm,

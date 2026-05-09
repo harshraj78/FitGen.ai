@@ -94,8 +94,10 @@ class WorkoutPlanner:
 
         plan = models.WorkoutPlan(
             user_id=user.id,
+            organization_id=user.organization_id,
             week_start=week_start,
             title=f"{user.name}'s adaptive week: {user.fitness_goal.replace('_', ' ')}",
+            status=self._initial_plan_status(user),
             intensity_modifier=modifier,
             rationale=rationale,
         )
@@ -158,6 +160,11 @@ class WorkoutPlanner:
             "id": plan.id,
             "week_start": plan.week_start.isoformat(),
             "title": plan.title,
+            "status": plan.status,
+            "organization_id": plan.organization_id,
+            "reviewed_by_account_id": plan.reviewed_by_account_id,
+            "reviewed_at": plan.reviewed_at.isoformat() if plan.reviewed_at else None,
+            "trainer_notes": plan.trainer_notes,
             "intensity_modifier": plan.intensity_modifier,
             "rationale": plan.rationale,
             "planned_exercise_count": len(plan.exercises),
@@ -210,8 +217,10 @@ class WorkoutPlanner:
         week_start = week_start or self._monday(date.today())
         plan = models.WorkoutPlan(
             user_id=user.id,
+            organization_id=user.organization_id,
             week_start=week_start,
             title=proposal["title"],
+            status=self._initial_plan_status(user),
             intensity_modifier=1.0,
             rationale=proposal["rationale"],
         )
@@ -470,3 +479,10 @@ class WorkoutPlanner:
             if template_day == day_name:
                 return index
         return min(6, max(1, fallback_index))
+
+    def _initial_plan_status(self, user: models.UserProfile) -> str:
+        if user.organization_id and user.assigned_trainer_id:
+            return models.PlanReviewStatus.pending_trainer_review.value
+        if user.organization_id:
+            return models.PlanReviewStatus.ai_generated.value
+        return models.PlanReviewStatus.trainer_approved.value
