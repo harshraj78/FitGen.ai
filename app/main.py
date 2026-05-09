@@ -16,6 +16,7 @@ from app import models, schemas
 from app.db import get_db, init_db
 from app.routes.analytics import router as analytics_router
 from app.routes.audit import router as audit_router
+from app.routes.business import router as business_router
 from app.routes.notifications import router as notification_router
 from app.routes.organizations import router as organization_router
 from app.routes.sessions import router as session_router
@@ -42,6 +43,7 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 app.include_router(organization_router, prefix="/api")
 app.include_router(trainer_workspace_router, prefix="/api")
 app.include_router(analytics_router, prefix="/api")
+app.include_router(business_router, prefix="/api")
 app.include_router(notification_router, prefix="/api")
 app.include_router(audit_router, prefix="/api")
 app.include_router(session_router, prefix="/api")
