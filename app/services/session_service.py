@@ -32,6 +32,7 @@ class WorkoutSessionService:
 
         session = models.WorkoutSession(
             user_id=user.id,
+            organization_id=user.organization_id,
             workout_plan_id=plan.id,
             day_index=day_index,
             planned_for=planned_for,
@@ -47,6 +48,7 @@ class WorkoutSessionService:
                 models.ReadinessCheckin(
                     session_id=session.id,
                     user_id=user.id,
+                    organization_id=user.organization_id,
                     **payload.readiness.model_dump(),
                 )
             )
@@ -56,6 +58,7 @@ class WorkoutSessionService:
                 models.WorkoutSessionExercise(
                     session_id=session.id,
                     planned_exercise_id=exercise.id,
+                    exercise_id=exercise.exercise_id,
                     exercise_name=exercise.exercise_name,
                     order_index=index,
                     target_sets=exercise.sets,
@@ -242,6 +245,7 @@ class WorkoutSessionService:
         if log is None:
             log = models.WorkoutLog(
                 user_id=session.user_id,
+                organization_id=session.organization_id,
                 session_id=session.id,
                 planned_exercise_id=session_exercise.planned_exercise_id,
                 exercise_name=session_exercise.exercise_name,
@@ -286,6 +290,7 @@ class WorkoutSessionService:
         return {
             "id": exercise.id,
             "planned_exercise_id": exercise.planned_exercise_id,
+            "exercise_id": exercise.exercise_id,
             "exercise_name": exercise.exercise_name,
             "order_index": exercise.order_index,
             "target_sets": exercise.target_sets,

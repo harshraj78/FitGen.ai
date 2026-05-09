@@ -1,7 +1,26 @@
 from datetime import date, datetime
-from typing import Any
+from typing import Any, Generic, TypeVar
 
 from pydantic import BaseModel, Field
+
+
+T = TypeVar("T")
+
+
+class APIResponse(BaseModel, Generic[T]):
+    data: T
+    request_id: str | None = None
+
+
+class PageMeta(BaseModel):
+    limit: int
+    offset: int
+    total: int
+
+
+class Page(BaseModel, Generic[T]):
+    items: list[T]
+    meta: PageMeta
 
 
 class UserProfileCreate(BaseModel):
@@ -15,11 +34,16 @@ class UserProfileCreate(BaseModel):
     budget_period: str = "daily"
     location: str
     gym_type: str
+    member_code: str = ""
+    assigned_trainer_id: int | None = None
 
 
 class UserProfileOut(UserProfileCreate):
     id: int
     account_id: int | None = None
+    organization_id: int | None = None
+    status: str = "active"
+    joined_on: date | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -123,6 +147,314 @@ class AIWorkoutPlanProposal(BaseModel):
     rationale: str
     equipment_summary: list[str]
     days: list[AIPlanExercise]
+
+
+class OrganizationCreate(BaseModel):
+    name: str = Field(min_length=2, max_length=160)
+    slug: str = Field(min_length=2, max_length=120)
+    legal_name: str = Field(default="", max_length=200)
+    timezone: str = Field(default="Asia/Kolkata", max_length=80)
+    phone: str = Field(default="", max_length=40)
+    email: str = Field(default="", max_length=255)
+    address: str = Field(default="", max_length=2000)
+
+
+class OrganizationOut(BaseModel):
+    id: int
+    name: str
+    slug: str
+    legal_name: str
+    status: str
+    timezone: str
+    phone: str
+    email: str
+    address: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class OrganizationMembershipCreate(BaseModel):
+    account_id: int
+    role: str
+
+
+class OrganizationMembershipOut(BaseModel):
+    id: int
+    organization_id: int
+    account_id: int
+    role: str
+    active: bool
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class OrganizationMemberCreate(UserProfileCreate):
+    account_id: int | None = None
+    status: str = "active"
+    joined_on: date | None = None
+
+
+class MembershipPlanCreate(BaseModel):
+    name: str = Field(min_length=2, max_length=120)
+    duration_days: int = Field(ge=1, le=3700)
+    price_amount: float = Field(ge=0)
+    currency: str = Field(default="INR", max_length=12)
+    description: str = Field(default="", max_length=2000)
+
+
+class MembershipPlanOut(MembershipPlanCreate):
+    id: int
+    organization_id: int
+    active: bool
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class MemberMembershipCreate(BaseModel):
+    plan_id: int | None = None
+    starts_on: date
+    ends_on: date
+    status: str = "active"
+    notes: str = Field(default="", max_length=2000)
+
+
+class MemberMembershipOut(MemberMembershipCreate):
+    id: int
+    organization_id: int
+    member_id: int
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class PaymentCreate(BaseModel):
+    membership_id: int | None = None
+    amount: float = Field(gt=0)
+    currency: str = Field(default="INR", max_length=12)
+    status: str = "pending"
+    due_on: date | None = None
+    paid_on: date | None = None
+    method: str = Field(default="", max_length=40)
+    reference: str = Field(default="", max_length=120)
+    notes: str = Field(default="", max_length=2000)
+
+
+class PaymentOut(PaymentCreate):
+    id: int
+    organization_id: int
+    member_id: int
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class AttendanceCheckinCreate(BaseModel):
+    method: str = "manual"
+    notes: str = Field(default="", max_length=1000)
+
+
+class AttendanceCheckinOut(BaseModel):
+    id: int
+    organization_id: int
+    member_id: int
+    checked_in_at: datetime
+    method: str
+    recorded_by_account_id: int | None = None
+    notes: str
+
+    model_config = {"from_attributes": True}
+
+
+class GoalCreate(BaseModel):
+    goal_type: str = "custom"
+    title: str = Field(min_length=2, max_length=160)
+    description: str = Field(default="", max_length=3000)
+    target_value: float | None = None
+    current_value: float | None = None
+    unit: str = Field(default="", max_length=40)
+    starts_on: date | None = None
+    target_date: date | None = None
+    assigned_trainer_id: int | None = None
+
+
+class GoalProgressUpdate(BaseModel):
+    current_value: float | None = None
+    status: str | None = None
+
+
+class GoalOut(GoalCreate):
+    id: int
+    organization_id: int | None = None
+    member_id: int
+    created_by_account_id: int | None = None
+    status: str
+    achieved_at: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
+    progress_pct: float | None = None
+    projected_completion: date | None = None
+
+    model_config = {"from_attributes": True}
+
+
+class WorkoutPlanReview(BaseModel):
+    status: str = Field(pattern="^(trainer_approved|trainer_modified)$")
+    trainer_notes: str = Field(default="", max_length=4000)
+
+
+class MemberMiniOut(BaseModel):
+    id: int
+    account_id: int | None = None
+    organization_id: int | None = None
+    assigned_trainer_id: int | None = None
+    member_code: str
+    status: str
+    name: str
+    age: int
+    fitness_goal: str
+    gym_type: str
+    joined_on: date | None = None
+
+    model_config = {"from_attributes": True}
+
+
+class AdherenceMetrics(BaseModel):
+    planned_sessions: int
+    completed_sessions: int
+    missed_sessions: int
+    adherence_rate: float
+    workout_logs_30d: int
+    last_workout_on: date | None = None
+
+
+class ReadinessFatigueSummary(BaseModel):
+    checkins_14d: int
+    average_energy: float | None = None
+    average_soreness: float | None = None
+    average_stress: float | None = None
+    average_pain: float | None = None
+    high_fatigue: bool
+
+
+class MembershipSummary(BaseModel):
+    status: str | None = None
+    plan_name: str | None = None
+    ends_on: date | None = None
+    days_remaining: int | None = None
+
+
+class LatestWorkoutSummary(BaseModel):
+    session_id: int | None = None
+    workout_plan_id: int | None = None
+    performed_on: date | None = None
+    status: str | None = None
+    completion_rate: float | None = None
+
+
+class RiskSignal(BaseModel):
+    code: str
+    severity: str
+    message: str
+
+
+class TrainerClientSummary(BaseModel):
+    member: MemberMiniOut
+    active_goals: list[GoalOut]
+    adherence: AdherenceMetrics
+    latest_workout: LatestWorkoutSummary
+    readiness: ReadinessFatigueSummary
+    membership: MembershipSummary
+    risk_signals: list[RiskSignal]
+
+
+class PendingPlanApproval(BaseModel):
+    plan_id: int
+    member: MemberMiniOut
+    title: str
+    week_start: date
+    status: str
+    created_at: datetime
+    rationale: str
+
+
+class MemberAnalyticsOut(BaseModel):
+    member_id: int
+    workout_consistency: AdherenceMetrics
+    attendance_rate: float
+    goal_completion_pct: float
+    volume_progression: list[dict[str, Any]]
+    readiness: ReadinessFatigueSummary
+
+
+class TrainerAnalyticsOut(BaseModel):
+    trainer_account_id: int
+    assigned_clients: int
+    at_risk_clients: int
+    pending_plan_reviews: int
+    average_adherence_rate: float
+    overdue_goals: int
+
+
+class GymAnalyticsOut(BaseModel):
+    organization_id: int
+    active_members: int
+    active_memberships: int
+    monthly_revenue: float
+    overdue_revenue: float
+    attendance_30d: int
+    goal_completion_pct: float
+    membership_renewals_30d: int
+    trainer_performance: list[TrainerAnalyticsOut]
+
+
+class NotificationOut(BaseModel):
+    id: int
+    organization_id: int | None = None
+    recipient_account_id: int | None = None
+    recipient_user_id: int | None = None
+    event_type: str
+    channel: str
+    title: str
+    message: str
+    read_at: datetime | None = None
+    delivered_at: datetime | None = None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class NotificationPreferenceUpdate(BaseModel):
+    event_type: str
+    channel: str = "in_app"
+    enabled: bool
+
+
+class AIExplainabilityOut(BaseModel):
+    id: int
+    organization_id: int | None = None
+    user_id: int
+    workout_plan_id: int | None = None
+    entity_type: str
+    entity_id: int | None = None
+    reason_code: str
+    message: str
+    metadata: dict[str, Any]
+    created_at: datetime
+
+
+class AuditLogOut(BaseModel):
+    id: int
+    organization_id: int | None = None
+    actor_account_id: int | None = None
+    actor_user_id: int | None = None
+    action: str
+    entity_type: str
+    entity_id: int | None = None
+    metadata: dict[str, Any]
+    created_at: datetime
 
 
 class DashboardOut(BaseModel):

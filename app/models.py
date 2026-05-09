@@ -45,6 +45,90 @@ class SessionExerciseStatus(str, Enum):
     skipped = "skipped"
 
 
+class OrganizationStatus(str, Enum):
+    active = "active"
+    suspended = "suspended"
+    archived = "archived"
+
+
+class OrganizationRole(str, Enum):
+    super_admin = "super_admin"
+    gym_owner = "gym_owner"
+    admin = "admin"
+    trainer = "trainer"
+    nutritionist = "nutritionist"
+    member = "member"
+
+
+class MemberStatus(str, Enum):
+    active = "active"
+    inactive = "inactive"
+    frozen = "frozen"
+    lead = "lead"
+
+
+class MembershipStatus(str, Enum):
+    active = "active"
+    expired = "expired"
+    cancelled = "cancelled"
+    paused = "paused"
+
+
+class PaymentStatus(str, Enum):
+    pending = "pending"
+    paid = "paid"
+    overdue = "overdue"
+    failed = "failed"
+    refunded = "refunded"
+
+
+class AttendanceMethod(str, Enum):
+    manual = "manual"
+    qr = "qr"
+    biometric = "biometric"
+    app = "app"
+
+
+class GoalStatus(str, Enum):
+    active = "active"
+    achieved = "achieved"
+    paused = "paused"
+    failed = "failed"
+    overdue = "overdue"
+
+
+class GoalType(str, Enum):
+    weight_loss = "weight_loss"
+    strength = "strength"
+    consistency = "consistency"
+    body_fat = "body_fat"
+    rehab_recovery = "rehab_recovery"
+    custom = "custom"
+
+
+class PlanReviewStatus(str, Enum):
+    ai_generated = "ai_generated"
+    pending_trainer_review = "pending_trainer_review"
+    trainer_approved = "trainer_approved"
+    trainer_modified = "trainer_modified"
+
+
+class NotificationEventType(str, Enum):
+    membership_expiring = "membership_expiring"
+    workout_missed = "workout_missed"
+    goal_overdue = "goal_overdue"
+    ai_plan_pending_review = "ai_plan_pending_review"
+    plan_approved = "plan_approved"
+    payment_received = "payment_received"
+
+
+class NotificationChannel(str, Enum):
+    in_app = "in_app"
+    email = "email"
+    whatsapp = "whatsapp"
+    push = "push"
+
+
 class Account(Base):
     __tablename__ = "accounts"
 
@@ -53,8 +137,15 @@ class Account(Base):
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
-    profiles: Mapped[list["UserProfile"]] = relationship(back_populates="account")
+    profiles: Mapped[list["UserProfile"]] = relationship(
+        back_populates="account",
+        foreign_keys="UserProfile.account_id",
+    )
     sessions: Mapped[list["AccountSession"]] = relationship(back_populates="account", cascade="all, delete-orphan")
+    organization_memberships: Mapped[list["OrganizationMembership"]] = relationship(
+        back_populates="account",
+        cascade="all, delete-orphan",
+    )
 
 
 class AccountSession(Base):
@@ -70,10 +161,17 @@ class AccountSession(Base):
 
 class UserProfile(Base):
     __tablename__ = "user_profiles"
-    __table_args__ = (UniqueConstraint("account_id", "name", name="uq_user_profiles_account_name"),)
+    __table_args__ = (
+        UniqueConstraint("account_id", "name", name="uq_user_profiles_account_name"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"), nullable=True, index=True)
+    organization_id: Mapped[int | None] = mapped_column(ForeignKey("organizations.id"), nullable=True, index=True)
+    assigned_trainer_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"), nullable=True, index=True)
+    member_code: Mapped[str] = mapped_column(String(80), default="")
+    status: Mapped[str] = mapped_column(String(30), default=MemberStatus.active.value, index=True)
+    joined_on: Mapped[date | None] = mapped_column(Date, nullable=True)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     age: Mapped[int] = mapped_column(Integer, nullable=False)
     height_cm: Mapped[float] = mapped_column(Float, nullable=False)
@@ -86,13 +184,19 @@ class UserProfile(Base):
     gym_type: Mapped[str] = mapped_column(String(40), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
-    account: Mapped[Account | None] = relationship(back_populates="profiles")
+    account: Mapped[Account | None] = relationship(back_populates="profiles", foreign_keys=[account_id])
+    organization: Mapped["Organization | None"] = relationship(back_populates="members")
+    assigned_trainer: Mapped["Account | None"] = relationship(foreign_keys=[assigned_trainer_id])
     workout_plans: Mapped[list["WorkoutPlan"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     workout_logs: Mapped[list["WorkoutLog"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     feedback: Mapped[list["Feedback"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     diet_plans: Mapped[list["DietPlan"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     weekly_reviews: Mapped[list["WeeklyReview"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     workout_sessions: Mapped[list["WorkoutSession"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    member_memberships: Mapped[list["MemberMembership"]] = relationship(back_populates="member", cascade="all, delete-orphan")
+    payments: Mapped[list["Payment"]] = relationship(back_populates="member", cascade="all, delete-orphan")
+    attendance_checkins: Mapped[list["AttendanceCheckin"]] = relationship(back_populates="member", cascade="all, delete-orphan")
+    goals: Mapped[list["Goal"]] = relationship(back_populates="member", cascade="all, delete-orphan")
 
 
 class WorkoutPlan(Base):
@@ -100,14 +204,270 @@ class WorkoutPlan(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("user_profiles.id"), index=True)
+    organization_id: Mapped[int | None] = mapped_column(ForeignKey("organizations.id"), nullable=True, index=True)
+    generated_by_account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"), nullable=True, index=True)
+    reviewed_by_account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"), nullable=True, index=True)
     week_start: Mapped[date] = mapped_column(Date, nullable=False)
     title: Mapped[str] = mapped_column(String(160), nullable=False)
+    status: Mapped[str] = mapped_column(String(40), default=PlanReviewStatus.trainer_approved.value, index=True)
     intensity_modifier: Mapped[float] = mapped_column(Float, default=1.0)
     rationale: Mapped[str] = mapped_column(Text, default="")
+    trainer_notes: Mapped[str] = mapped_column(Text, default="")
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     user: Mapped[UserProfile] = relationship(back_populates="workout_plans")
+    organization: Mapped["Organization | None"] = relationship(back_populates="workout_plans")
+    generated_by: Mapped["Account | None"] = relationship(foreign_keys=[generated_by_account_id])
+    reviewed_by: Mapped["Account | None"] = relationship(foreign_keys=[reviewed_by_account_id])
     exercises: Mapped[list["WorkoutExercise"]] = relationship(back_populates="plan", cascade="all, delete-orphan")
+
+
+class Organization(Base):
+    __tablename__ = "organizations"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(160), nullable=False, index=True)
+    slug: Mapped[str] = mapped_column(String(120), nullable=False, unique=True, index=True)
+    legal_name: Mapped[str] = mapped_column(String(200), default="")
+    status: Mapped[str] = mapped_column(String(30), default=OrganizationStatus.active.value, index=True)
+    timezone: Mapped[str] = mapped_column(String(80), default="Asia/Kolkata")
+    phone: Mapped[str] = mapped_column(String(40), default="")
+    email: Mapped[str] = mapped_column(String(255), default="")
+    address: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    memberships: Mapped[list["OrganizationMembership"]] = relationship(back_populates="organization", cascade="all, delete-orphan")
+    members: Mapped[list[UserProfile]] = relationship(back_populates="organization")
+    membership_plans: Mapped[list["MembershipPlan"]] = relationship(back_populates="organization", cascade="all, delete-orphan")
+    member_memberships: Mapped[list["MemberMembership"]] = relationship(back_populates="organization", cascade="all, delete-orphan")
+    payments: Mapped[list["Payment"]] = relationship(back_populates="organization", cascade="all, delete-orphan")
+    attendance_checkins: Mapped[list["AttendanceCheckin"]] = relationship(back_populates="organization", cascade="all, delete-orphan")
+    goals: Mapped[list["Goal"]] = relationship(back_populates="organization", cascade="all, delete-orphan")
+    workout_plans: Mapped[list[WorkoutPlan]] = relationship(back_populates="organization")
+    notification_events: Mapped[list["NotificationEvent"]] = relationship(back_populates="organization", cascade="all, delete-orphan")
+
+
+class OrganizationMembership(Base):
+    __tablename__ = "organization_memberships"
+    __table_args__ = (UniqueConstraint("organization_id", "account_id", name="uq_org_membership_account"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"), index=True)
+    account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), index=True)
+    role: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    active: Mapped[bool] = mapped_column(default=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    organization: Mapped[Organization] = relationship(back_populates="memberships")
+    account: Mapped[Account] = relationship(back_populates="organization_memberships")
+
+
+class MembershipPlan(Base):
+    __tablename__ = "membership_plans"
+    __table_args__ = (UniqueConstraint("organization_id", "name", name="uq_membership_plans_org_name"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"), index=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    duration_days: Mapped[int] = mapped_column(Integer, nullable=False)
+    price_amount: Mapped[float] = mapped_column(Float, nullable=False)
+    currency: Mapped[str] = mapped_column(String(12), default="INR")
+    description: Mapped[str] = mapped_column(Text, default="")
+    active: Mapped[bool] = mapped_column(default=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    organization: Mapped[Organization] = relationship(back_populates="membership_plans")
+    member_memberships: Mapped[list["MemberMembership"]] = relationship(back_populates="plan")
+
+
+class MemberMembership(Base):
+    __tablename__ = "member_memberships"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"), index=True)
+    member_id: Mapped[int] = mapped_column(ForeignKey("user_profiles.id"), index=True)
+    plan_id: Mapped[int | None] = mapped_column(ForeignKey("membership_plans.id"), nullable=True, index=True)
+    starts_on: Mapped[date] = mapped_column(Date, nullable=False)
+    ends_on: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(30), default=MembershipStatus.active.value, index=True)
+    renewal_of_id: Mapped[int | None] = mapped_column(ForeignKey("member_memberships.id"), nullable=True)
+    notes: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    organization: Mapped[Organization] = relationship(back_populates="member_memberships")
+    member: Mapped[UserProfile] = relationship(back_populates="member_memberships")
+    plan: Mapped[MembershipPlan | None] = relationship(back_populates="member_memberships")
+    renewal_of: Mapped["MemberMembership | None"] = relationship(remote_side=[id])
+    payments: Mapped[list["Payment"]] = relationship(back_populates="membership")
+
+
+class Payment(Base):
+    __tablename__ = "payments"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"), index=True)
+    member_id: Mapped[int] = mapped_column(ForeignKey("user_profiles.id"), index=True)
+    membership_id: Mapped[int | None] = mapped_column(ForeignKey("member_memberships.id"), nullable=True, index=True)
+    amount: Mapped[float] = mapped_column(Float, nullable=False)
+    currency: Mapped[str] = mapped_column(String(12), default="INR")
+    status: Mapped[str] = mapped_column(String(30), default=PaymentStatus.pending.value, index=True)
+    due_on: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
+    paid_on: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
+    method: Mapped[str] = mapped_column(String(40), default="")
+    reference: Mapped[str] = mapped_column(String(120), default="")
+    notes: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    organization: Mapped[Organization] = relationship(back_populates="payments")
+    member: Mapped[UserProfile] = relationship(back_populates="payments")
+    membership: Mapped[MemberMembership | None] = relationship(back_populates="payments")
+
+
+class AttendanceCheckin(Base):
+    __tablename__ = "attendance_checkins"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"), index=True)
+    member_id: Mapped[int] = mapped_column(ForeignKey("user_profiles.id"), index=True)
+    checked_in_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
+    method: Mapped[str] = mapped_column(String(30), default=AttendanceMethod.manual.value)
+    recorded_by_account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"), nullable=True, index=True)
+    notes: Mapped[str] = mapped_column(Text, default="")
+
+    organization: Mapped[Organization] = relationship(back_populates="attendance_checkins")
+    member: Mapped[UserProfile] = relationship(back_populates="attendance_checkins")
+    recorded_by: Mapped["Account | None"] = relationship()
+
+
+class Goal(Base):
+    __tablename__ = "goals"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    organization_id: Mapped[int | None] = mapped_column(ForeignKey("organizations.id"), nullable=True, index=True)
+    member_id: Mapped[int] = mapped_column(ForeignKey("user_profiles.id"), index=True)
+    created_by_account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"), nullable=True, index=True)
+    assigned_trainer_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"), nullable=True, index=True)
+    goal_type: Mapped[str] = mapped_column(String(40), default=GoalType.custom.value, index=True)
+    title: Mapped[str] = mapped_column(String(160), nullable=False)
+    description: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(30), default=GoalStatus.active.value, index=True)
+    target_value: Mapped[float | None] = mapped_column(Float, nullable=True)
+    current_value: Mapped[float | None] = mapped_column(Float, nullable=True)
+    unit: Mapped[str] = mapped_column(String(40), default="")
+    starts_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    target_date: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
+    achieved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    organization: Mapped[Organization | None] = relationship(back_populates="goals")
+    member: Mapped[UserProfile] = relationship(back_populates="goals")
+    created_by: Mapped["Account | None"] = relationship(foreign_keys=[created_by_account_id])
+    assigned_trainer: Mapped["Account | None"] = relationship(foreign_keys=[assigned_trainer_id])
+    milestones: Mapped[list["GoalMilestone"]] = relationship(back_populates="goal", cascade="all, delete-orphan")
+
+
+class GoalMilestone(Base):
+    __tablename__ = "goal_milestones"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    goal_id: Mapped[int] = mapped_column(ForeignKey("goals.id"), index=True)
+    title: Mapped[str] = mapped_column(String(160), nullable=False)
+    target_value: Mapped[float | None] = mapped_column(Float, nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    goal: Mapped[Goal] = relationship(back_populates="milestones")
+
+
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    organization_id: Mapped[int | None] = mapped_column(ForeignKey("organizations.id"), nullable=True, index=True)
+    actor_account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"), nullable=True, index=True)
+    actor_user_id: Mapped[int | None] = mapped_column(ForeignKey("user_profiles.id"), nullable=True, index=True)
+    action: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
+    entity_type: Mapped[str] = mapped_column(String(80), nullable=False)
+    entity_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    metadata_json: Mapped[str] = mapped_column(Text, default="{}")
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    organization: Mapped[Organization | None] = relationship()
+    actor: Mapped["Account | None"] = relationship()
+    actor_user: Mapped["UserProfile | None"] = relationship()
+
+
+class NotificationEvent(Base):
+    __tablename__ = "notification_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    organization_id: Mapped[int | None] = mapped_column(ForeignKey("organizations.id"), nullable=True, index=True)
+    event_type: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    entity_type: Mapped[str] = mapped_column(String(80), nullable=False)
+    entity_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    payload_json: Mapped[str] = mapped_column(Text, default="{}")
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    organization: Mapped[Organization | None] = relationship(back_populates="notification_events")
+    notifications: Mapped[list["Notification"]] = relationship(back_populates="event", cascade="all, delete-orphan")
+
+
+class Notification(Base):
+    __tablename__ = "notifications"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    organization_id: Mapped[int | None] = mapped_column(ForeignKey("organizations.id"), nullable=True, index=True)
+    event_id: Mapped[int | None] = mapped_column(ForeignKey("notification_events.id"), nullable=True, index=True)
+    recipient_account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"), nullable=True, index=True)
+    recipient_user_id: Mapped[int | None] = mapped_column(ForeignKey("user_profiles.id"), nullable=True, index=True)
+    event_type: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    channel: Mapped[str] = mapped_column(String(30), default=NotificationChannel.in_app.value, index=True)
+    title: Mapped[str] = mapped_column(String(180), nullable=False)
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    read_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    event: Mapped[NotificationEvent | None] = relationship(back_populates="notifications")
+    recipient_account: Mapped["Account | None"] = relationship(foreign_keys=[recipient_account_id])
+    recipient_user: Mapped["UserProfile | None"] = relationship(foreign_keys=[recipient_user_id])
+
+
+class NotificationPreference(Base):
+    __tablename__ = "notification_preferences"
+    __table_args__ = (UniqueConstraint("organization_id", "account_id", "event_type", "channel", name="uq_notification_pref_scope"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    organization_id: Mapped[int | None] = mapped_column(ForeignKey("organizations.id"), nullable=True, index=True)
+    account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), index=True)
+    event_type: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    channel: Mapped[str] = mapped_column(String(30), default=NotificationChannel.in_app.value, index=True)
+    enabled: Mapped[bool] = mapped_column(default=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    account: Mapped[Account] = relationship()
+
+
+class AIExplainabilityRecord(Base):
+    __tablename__ = "ai_explainability_records"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    organization_id: Mapped[int | None] = mapped_column(ForeignKey("organizations.id"), nullable=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("user_profiles.id"), index=True)
+    workout_plan_id: Mapped[int | None] = mapped_column(ForeignKey("workout_plans.id"), nullable=True, index=True)
+    entity_type: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    entity_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    reason_code: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    metadata_json: Mapped[str] = mapped_column(Text, default="{}")
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    user: Mapped[UserProfile] = relationship()
+    workout_plan: Mapped["WorkoutPlan | None"] = relationship()
 
 
 class WorkoutExercise(Base):
@@ -115,6 +475,7 @@ class WorkoutExercise(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     plan_id: Mapped[int] = mapped_column(ForeignKey("workout_plans.id"), index=True)
+    exercise_id: Mapped[int | None] = mapped_column(ForeignKey("exercises.id"), nullable=True, index=True)
     day_index: Mapped[int] = mapped_column(Integer, nullable=False)
     day_name: Mapped[str] = mapped_column(String(20), nullable=False)
     focus: Mapped[str] = mapped_column(String(80), nullable=False)
@@ -126,6 +487,7 @@ class WorkoutExercise(Base):
     notes: Mapped[str] = mapped_column(Text, default="")
 
     plan: Mapped[WorkoutPlan] = relationship(back_populates="exercises")
+    exercise: Mapped["Exercise | None"] = relationship()
 
 
 class WorkoutLog(Base):
@@ -133,6 +495,7 @@ class WorkoutLog(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("user_profiles.id"), index=True)
+    organization_id: Mapped[int | None] = mapped_column(ForeignKey("organizations.id"), nullable=True, index=True)
     planned_exercise_id: Mapped[int | None] = mapped_column(ForeignKey("workout_exercises.id"), nullable=True, index=True)
     session_id: Mapped[int | None] = mapped_column(ForeignKey("workout_sessions.id"), nullable=True, index=True)
     exercise_name: Mapped[str] = mapped_column(String(140), nullable=False)
@@ -154,6 +517,7 @@ class Feedback(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("user_profiles.id"), index=True)
+    organization_id: Mapped[int | None] = mapped_column(ForeignKey("organizations.id"), nullable=True, index=True)
     signal: Mapped[str] = mapped_column(String(40), nullable=False)
     message: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
@@ -192,11 +556,55 @@ class WeeklyReview(Base):
     user: Mapped[UserProfile] = relationship(back_populates="weekly_reviews")
 
 
+class Exercise(Base):
+    __tablename__ = "exercises"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(140), nullable=False, unique=True, index=True)
+    focus: Mapped[str] = mapped_column(String(80), nullable=False)
+    movement_pattern: Mapped[str] = mapped_column(String(80), nullable=False)
+    equipment: Mapped[str] = mapped_column(String(80), nullable=False)
+    difficulty: Mapped[str] = mapped_column(String(40), default="beginner")
+    primary_muscles: Mapped[str] = mapped_column(String(200), default="")
+    joint_stress_tags: Mapped[str] = mapped_column(String(200), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    aliases: Mapped[list["ExerciseAlias"]] = relationship(back_populates="exercise", cascade="all, delete-orphan")
+
+
+class ExerciseAlias(Base):
+    __tablename__ = "exercise_aliases"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    exercise_id: Mapped[int] = mapped_column(ForeignKey("exercises.id"), index=True)
+    alias: Mapped[str] = mapped_column(String(140), nullable=False, unique=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    exercise: Mapped[Exercise] = relationship(back_populates="aliases")
+
+
+class ExerciseSubstitution(Base):
+    __tablename__ = "exercise_substitutions"
+    __table_args__ = (UniqueConstraint("source_exercise_id", "substitute_exercise_id", name="uq_exercise_substitution_pair"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    source_exercise_id: Mapped[int] = mapped_column(ForeignKey("exercises.id"), index=True)
+    substitute_exercise_id: Mapped[int] = mapped_column(ForeignKey("exercises.id"), index=True)
+    reason: Mapped[str] = mapped_column(String(120), default="equipment_fallback")
+    equipment_constraint: Mapped[str] = mapped_column(String(80), default="")
+    pain_constraint: Mapped[str] = mapped_column(String(120), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    source_exercise: Mapped[Exercise] = relationship(foreign_keys=[source_exercise_id])
+    substitute_exercise: Mapped[Exercise] = relationship(foreign_keys=[substitute_exercise_id])
+
+
 class WorkoutSession(Base):
     __tablename__ = "workout_sessions"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("user_profiles.id"), index=True)
+    organization_id: Mapped[int | None] = mapped_column(ForeignKey("organizations.id"), nullable=True, index=True)
     workout_plan_id: Mapped[int | None] = mapped_column(ForeignKey("workout_plans.id"), nullable=True, index=True)
     day_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
     planned_for: Mapped[date | None] = mapped_column(Date, nullable=True)
@@ -222,6 +630,7 @@ class ReadinessCheckin(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     session_id: Mapped[int] = mapped_column(ForeignKey("workout_sessions.id"), unique=True, index=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("user_profiles.id"), index=True)
+    organization_id: Mapped[int | None] = mapped_column(ForeignKey("organizations.id"), nullable=True, index=True)
     energy: Mapped[int | None] = mapped_column(Integer, nullable=True)
     sleep_quality: Mapped[int | None] = mapped_column(Integer, nullable=True)
     soreness: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -239,6 +648,7 @@ class WorkoutSessionExercise(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     session_id: Mapped[int] = mapped_column(ForeignKey("workout_sessions.id"), index=True)
     planned_exercise_id: Mapped[int | None] = mapped_column(ForeignKey("workout_exercises.id"), nullable=True, index=True)
+    exercise_id: Mapped[int | None] = mapped_column(ForeignKey("exercises.id"), nullable=True, index=True)
     exercise_name: Mapped[str] = mapped_column(String(140), nullable=False)
     order_index: Mapped[int] = mapped_column(Integer, nullable=False)
     target_sets: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -251,6 +661,7 @@ class WorkoutSessionExercise(Base):
 
     session: Mapped[WorkoutSession] = relationship(back_populates="exercises")
     planned_exercise: Mapped["WorkoutExercise | None"] = relationship()
+    exercise: Mapped["Exercise | None"] = relationship()
     sets: Mapped[list["PerformedSet"]] = relationship(back_populates="session_exercise", cascade="all, delete-orphan")
 
 

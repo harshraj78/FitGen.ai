@@ -8,6 +8,7 @@ from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
 from app import models
+from app.services.explainability import ExplainabilityService
 
 
 EQUIPMENT_BY_GYM = {
@@ -44,6 +45,17 @@ EXERCISE_LIBRARY = [
     {"name": "Farmer Carry", "focus": "Conditioning", "equipment": "dumbbell", "fallback": "Loaded Backpack Carry"},
 ]
 
+EXERCISE_METADATA = {
+    "Lower Strength": ("squat", "quads, glutes", "knee"),
+    "Upper Push": ("horizontal_push", "chest, triceps", "shoulder"),
+    "Upper Pull": ("horizontal_pull", "lats, upper back", "shoulder, elbow"),
+    "Posterior Chain": ("hinge", "hamstrings, glutes", "spine, hamstring"),
+    "Shoulders": ("vertical_push", "shoulders, triceps", "shoulder"),
+    "Arms": ("elbow_isolation", "arms", "elbow"),
+    "Core": ("anti_extension", "core", "shoulder"),
+    "Conditioning": ("loaded_carry", "grip, core", "spine"),
+}
+
 WEEK_TEMPLATE = [
     ("Mon", "Lower Strength", ["Lower Strength", "Posterior Chain", "Core"]),
     ("Tue", "Upper Push", ["Upper Push", "Shoulders", "Arms"]),
@@ -75,6 +87,7 @@ class WorkoutPlanner:
         self.db = db
 
     def generate_week(self, user: models.UserProfile, week_start: date | None = None) -> models.WorkoutPlan:
+        self._ensure_exercise_catalog()
         week_start = week_start or self._monday(date.today())
         available = EQUIPMENT_BY_GYM.get(user.gym_type, EQUIPMENT_BY_GYM["home"])
         metrics = self._performance_metrics(user.id)
@@ -82,13 +95,23 @@ class WorkoutPlanner:
 
         plan = models.WorkoutPlan(
             user_id=user.id,
+            organization_id=user.organization_id,
             week_start=week_start,
             title=f"{user.name}'s adaptive week: {user.fitness_goal.replace('_', ' ')}",
+            status=self._initial_plan_status(user),
             intensity_modifier=modifier,
             rationale=rationale,
         )
         self.db.add(plan)
         self.db.flush()
+        for reason in ExplainabilityService(self.db).deterministic_reasons(user, metrics, modifier):
+            ExplainabilityService(self.db).record(
+                user=user,
+                workout_plan_id=plan.id,
+                entity_type="workout_plan",
+                entity_id=plan.id,
+                **reason,
+            )
 
         for day_index, (day_name, day_focus, focus_blocks) in enumerate(WEEK_TEMPLATE, start=1):
             for focus in focus_blocks:
@@ -101,6 +124,7 @@ class WorkoutPlanner:
                 self.db.add(
                     models.WorkoutExercise(
                         plan_id=plan.id,
+                        exercise_id=exercise.get("id"),
                         day_index=day_index,
                         day_name=day_name,
                         focus=day_focus,
@@ -130,6 +154,7 @@ class WorkoutPlanner:
             days[exercise.day_index]["exercises"].append(
                 {
                     "id": exercise.id,
+                    "exercise_id": exercise.exercise_id,
                     "name": exercise.exercise_name,
                     "equipment": exercise.equipment,
                     "sets": exercise.sets,
@@ -144,6 +169,11 @@ class WorkoutPlanner:
             "id": plan.id,
             "week_start": plan.week_start.isoformat(),
             "title": plan.title,
+            "status": plan.status,
+            "organization_id": plan.organization_id,
+            "reviewed_by_account_id": plan.reviewed_by_account_id,
+            "reviewed_at": plan.reviewed_at.isoformat() if plan.reviewed_at else None,
+            "trainer_notes": plan.trainer_notes,
             "intensity_modifier": plan.intensity_modifier,
             "rationale": plan.rationale,
             "planned_exercise_count": len(plan.exercises),
@@ -159,6 +189,7 @@ class WorkoutPlanner:
         )
 
     def generate_ai_ready_proposal(self, user: models.UserProfile, equipment_text: str) -> dict[str, Any]:
+        self._ensure_exercise_catalog()
         available = self.parse_equipment_text(equipment_text) or EQUIPMENT_BY_GYM.get(user.gym_type, EQUIPMENT_BY_GYM["home"])
         metrics = self._performance_metrics(user.id)
         modifier, rationale = self._intensity_modifier(user, metrics)
@@ -191,22 +222,35 @@ class WorkoutPlanner:
         }
 
     def apply_plan_proposal(self, user: models.UserProfile, proposal: dict[str, Any], week_start: date | None = None) -> models.WorkoutPlan:
+        self._ensure_exercise_catalog()
         week_start = week_start or self._monday(date.today())
         plan = models.WorkoutPlan(
             user_id=user.id,
+            organization_id=user.organization_id,
             week_start=week_start,
             title=proposal["title"],
+            status=self._initial_plan_status(user),
             intensity_modifier=1.0,
             rationale=proposal["rationale"],
         )
         self.db.add(plan)
         self.db.flush()
+        ExplainabilityService(self.db).record(
+            user=user,
+            workout_plan_id=plan.id,
+            entity_type="workout_plan",
+            entity_id=plan.id,
+            reason_code="ai_plan_generated",
+            message="AI-assisted workout proposal was converted into a structured workout plan.",
+            metadata={"proposal_title": proposal["title"]},
+        )
 
         for index, exercise in enumerate(proposal["days"], start=1):
             day_name = exercise["day"]
             self.db.add(
                 models.WorkoutExercise(
                     plan_id=plan.id,
+                    exercise_id=self._exercise_id_by_name(exercise["name"]),
                     day_index=self._day_index(day_name, index),
                     day_name=day_name,
                     focus=exercise["focus"],
@@ -236,9 +280,90 @@ class WorkoutPlanner:
         candidates = [item for item in EXERCISE_LIBRARY if item["focus"] == focus]
         for item in candidates:
             if item["equipment"] in available:
-                return item
+                return {**item, "id": self._exercise_id_by_name(item["name"])}
         fallback_name = candidates[0]["fallback"] if candidates else "Bodyweight Circuit"
-        return {"name": fallback_name, "focus": focus, "equipment": "bodyweight", "fallback": fallback_name}
+        return {
+            "id": self._exercise_id_by_name(fallback_name),
+            "name": fallback_name,
+            "focus": focus,
+            "equipment": self._equipment_for_name(fallback_name, "bodyweight"),
+            "fallback": fallback_name,
+        }
+
+    def _ensure_exercise_catalog(self) -> None:
+        existing = {name for (name,) in self.db.query(models.Exercise.name).all()}
+        exercise_rows = list(EXERCISE_LIBRARY)
+        fallback_names = {item["fallback"] for item in EXERCISE_LIBRARY}
+        known_names = {item["name"] for item in exercise_rows}
+        for fallback_name in sorted(fallback_names - known_names):
+            source = next(item for item in EXERCISE_LIBRARY if item["fallback"] == fallback_name)
+            exercise_rows.append(
+                {
+                    "name": fallback_name,
+                    "focus": source["focus"],
+                    "equipment": self._equipment_for_name(fallback_name, "bodyweight"),
+                    "fallback": fallback_name,
+                }
+            )
+
+        for item in exercise_rows:
+            if item["name"] in existing:
+                continue
+            movement_pattern, muscles, stress_tags = EXERCISE_METADATA.get(item["focus"], ("general", "", ""))
+            self.db.add(
+                models.Exercise(
+                    name=item["name"],
+                    focus=item["focus"],
+                    movement_pattern=movement_pattern,
+                    equipment=item["equipment"],
+                    difficulty="beginner",
+                    primary_muscles=muscles,
+                    joint_stress_tags=stress_tags,
+                )
+            )
+        self.db.flush()
+
+        name_to_exercise = {exercise.name: exercise for exercise in self.db.query(models.Exercise).all()}
+        existing_pairs = {
+            (source, substitute)
+            for source, substitute in self.db.query(
+                models.ExerciseSubstitution.source_exercise_id,
+                models.ExerciseSubstitution.substitute_exercise_id,
+            ).all()
+        }
+        for item in EXERCISE_LIBRARY:
+            source = name_to_exercise.get(item["name"])
+            substitute = name_to_exercise.get(item["fallback"])
+            if not source or not substitute or source.id == substitute.id or (source.id, substitute.id) in existing_pairs:
+                continue
+            self.db.add(
+                models.ExerciseSubstitution(
+                    source_exercise_id=source.id,
+                    substitute_exercise_id=substitute.id,
+                    reason="equipment_fallback",
+                )
+            )
+        self.db.flush()
+
+    def _exercise_id_by_name(self, name: str) -> int | None:
+        exercise = self.db.query(models.Exercise).filter(models.Exercise.name == name).first()
+        return exercise.id if exercise else None
+
+    def _equipment_for_name(self, name: str, default: str) -> str:
+        lowered = name.lower()
+        if "band" in lowered:
+            return "resistance_band"
+        if "backpack" in lowered:
+            return "backpack"
+        if "dumbbell" in lowered:
+            return "dumbbell"
+        if "barbell" in lowered:
+            return "barbell"
+        if "cable" in lowered:
+            return "cable"
+        if "machine" in lowered:
+            return "machine"
+        return default
 
     def _performance_metrics(self, user_id: int) -> dict:
         since = date.today() - timedelta(days=21)
@@ -372,3 +497,10 @@ class WorkoutPlanner:
             if template_day == day_name:
                 return index
         return min(6, max(1, fallback_index))
+
+    def _initial_plan_status(self, user: models.UserProfile) -> str:
+        if user.organization_id and user.assigned_trainer_id:
+            return models.PlanReviewStatus.pending_trainer_review.value
+        if user.organization_id:
+            return models.PlanReviewStatus.ai_generated.value
+        return models.PlanReviewStatus.trainer_approved.value

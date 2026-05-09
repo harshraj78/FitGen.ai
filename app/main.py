@@ -1,16 +1,25 @@
+import logging
+import time
+import uuid
 from datetime import date, timedelta
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
 from app import models, schemas
 from app.db import get_db, init_db
+from app.routes.analytics import router as analytics_router
+from app.routes.audit import router as audit_router
+from app.routes.notifications import router as notification_router
+from app.routes.organizations import router as organization_router
 from app.routes.sessions import router as session_router
+from app.routes.trainer_workspace import router as trainer_workspace_router
 from app.services.auth import account_dict, create_session, get_account_from_authorization, hash_password, normalize_email, verify_password
 from app.services.diet_planner import DietPlanner
 from app.services.llm import LLMService
@@ -19,6 +28,8 @@ from app.services.workout_planner import WorkoutPlanner
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 STATIC_DIR = BASE_DIR / "frontend"
+logger = logging.getLogger("fitgen.api")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 
 app = FastAPI(title="FitGen AI", version="1.0.0")
 app.add_middleware(
@@ -28,7 +39,53 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+app.include_router(organization_router, prefix="/api")
+app.include_router(trainer_workspace_router, prefix="/api")
+app.include_router(analytics_router, prefix="/api")
+app.include_router(notification_router, prefix="/api")
+app.include_router(audit_router, prefix="/api")
 app.include_router(session_router, prefix="/api")
+
+
+@app.middleware("http")
+async def request_context_middleware(request: Request, call_next):
+    request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
+    request.state.request_id = request_id
+    start = time.perf_counter()
+    try:
+        response = await call_next(request)
+    except Exception:
+        logger.exception("request_failed", extra={"request_id": request_id, "path": request.url.path})
+        raise
+    duration_ms = round((time.perf_counter() - start) * 1000, 2)
+    response.headers["X-Request-ID"] = request_id
+    logger.info(
+        "request_completed",
+        extra={
+            "request_id": request_id,
+            "method": request.method,
+            "path": request.url.path,
+            "status_code": response.status_code,
+            "duration_ms": duration_ms,
+        },
+    )
+    return response
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"error": {"code": "http_error", "message": exc.detail}, "request_id": getattr(request.state, "request_id", None)},
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+    return JSONResponse(
+        status_code=422,
+        content={"error": {"code": "validation_error", "message": "Invalid request payload", "details": exc.errors()}, "request_id": getattr(request.state, "request_id", None)},
+    )
 
 
 @app.on_event("startup")
@@ -270,7 +327,7 @@ def current_workout(
     db: Session = Depends(get_db),
     account: models.Account | None = Depends(_optional_account),
 ) -> dict:
-    _get_user(db, user_id, account)
+    user = _get_user(db, user_id, account)
     planner = WorkoutPlanner(db)
     return {"workout_plan": planner.serialize_plan(planner.current_plan(user_id))}
 
@@ -289,7 +346,7 @@ def log_workout(
             raise HTTPException(status_code=400, detail="Planned exercise does not belong to this user")
     else:
         planned_exercise = None
-    log = models.WorkoutLog(user_id=user_id, **payload.model_dump())
+    log = models.WorkoutLog(user_id=user_id, organization_id=user.organization_id, **payload.model_dump())
     db.add(log)
     db.commit()
     db.refresh(log)
@@ -303,8 +360,8 @@ def submit_feedback(
     db: Session = Depends(get_db),
     account: models.Account | None = Depends(_optional_account),
 ) -> dict:
-    _get_user(db, user_id, account)
-    feedback = models.Feedback(user_id=user_id, signal=payload.signal, message=payload.message)
+    user = _get_user(db, user_id, account)
+    feedback = models.Feedback(user_id=user_id, organization_id=user.organization_id, signal=payload.signal, message=payload.message)
     db.add(feedback)
     db.commit()
     return {
@@ -373,6 +430,11 @@ def _user_dict(user: models.UserProfile) -> dict:
     return {
         "id": user.id,
         "account_id": user.account_id,
+        "organization_id": user.organization_id,
+        "assigned_trainer_id": user.assigned_trainer_id,
+        "member_code": user.member_code,
+        "status": user.status,
+        "joined_on": user.joined_on.isoformat() if user.joined_on else None,
         "name": user.name,
         "age": user.age,
         "height_cm": user.height_cm,
@@ -514,6 +576,7 @@ def _seed_demo_history(db: Session, user: models.UserProfile) -> None:
         db.add(
             models.WorkoutLog(
                 user_id=user.id,
+                organization_id=user.organization_id,
                 exercise_name=item[0],
                 performed_on=start + timedelta(days=index + (index // 4) * 3),
                 sets_completed=item[1],
@@ -523,5 +586,5 @@ def _seed_demo_history(db: Session, user: models.UserProfile) -> None:
                 completed=item[5],
             )
         )
-    db.add(models.Feedback(user_id=user.id, signal="too_hard", message="Squats felt heavy after poor sleep."))
+    db.add(models.Feedback(user_id=user.id, organization_id=user.organization_id, signal="too_hard", message="Squats felt heavy after poor sleep."))
     db.commit()

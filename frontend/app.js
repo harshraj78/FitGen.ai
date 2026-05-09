@@ -1,4 +1,6 @@
 let state = null;
+let currentAccount = null;
+let trainerWorkspace = null;
 const ACTIVE_USER_KEY = "fitgen-active-user-id";
 const AUTH_TOKEN_KEY = "fitgen-auth-token";
 let selectedWorkoutDayIndex = null;
@@ -35,6 +37,9 @@ async function errorMessage(response) {
     if (Array.isArray(data.detail)) {
       return data.detail.map((item) => item.msg).join(" ");
     }
+    if (data.error?.message) {
+      return data.error.message;
+    }
     return data.detail || response.statusText;
   } catch (error) {
     return response.statusText;
@@ -47,6 +52,7 @@ async function load() {
   if (token) {
     try {
       const session = await api("/api/auth/me");
+      currentAccount = session.account;
       const profileId = activeUserId || session.profile?.id;
       if (!profileId) {
         showOnboarding("Account found, but no profile exists yet.");
@@ -55,6 +61,7 @@ async function load() {
       localStorage.setItem(ACTIVE_USER_KEY, String(profileId));
       state = await api(`/api/users/${profileId}/dashboard`);
       await loadActiveSession();
+      await loadTrainerWorkspace();
       showApp();
       render();
       return;
@@ -74,6 +81,7 @@ async function load() {
   try {
     state = await api(`/api/users/${activeUserId}/dashboard`);
     await loadActiveSession();
+    trainerWorkspace = null;
     showApp();
     render();
   } catch (error) {
@@ -97,7 +105,30 @@ async function loadActiveSession() {
 async function refreshDashboardAndSession() {
   state = await api(`/api/users/${state.user.id}/dashboard`);
   await loadActiveSession();
+  await loadTrainerWorkspace();
   render();
+}
+
+async function loadTrainerWorkspace() {
+  trainerWorkspace = null;
+  if (!currentAccount) return;
+  try {
+    const organizations = await api("/api/organizations");
+    const organization = organizations[0];
+    if (!organization) {
+      trainerWorkspace = { available: false, reason: "No organization workspace is attached to this account yet." };
+      return;
+    }
+    const [clients, atRisk, approvals, analytics] = await Promise.all([
+      api(`/api/organizations/${organization.id}/trainer/clients`),
+      api(`/api/organizations/${organization.id}/trainer/clients/at-risk`),
+      api(`/api/organizations/${organization.id}/trainer/plan-approvals/pending`),
+      api(`/api/organizations/${organization.id}/analytics/trainers/${currentAccount.id}`),
+    ]);
+    trainerWorkspace = { available: true, organization, clients, atRisk, approvals, analytics };
+  } catch (error) {
+    trainerWorkspace = { available: false, reason: error.message || "Trainer workspace is not available for this account." };
+  }
 }
 
 function render() {
@@ -105,6 +136,7 @@ function render() {
   renderStats();
   renderCoachCockpit();
   renderCoachStrip();
+  renderTrainerWorkspace();
   renderWorkout();
   renderDiet();
   renderReview();
@@ -203,6 +235,252 @@ function renderCoachStrip() {
       <p>${diet?.protein_g || 0}g protein with Rs ${Math.round(diet?.estimated_daily_cost || 0)} estimated daily cost.</p>
     </article>
   `;
+}
+
+function renderTrainerWorkspace() {
+  const root = $("#trainerWorkspaceRoot");
+  if (!root) return;
+  if (!trainerWorkspace) {
+    root.innerHTML = emptyTrainerState("Trainer workspace needs a signed-in organization account.");
+    return;
+  }
+  if (!trainerWorkspace.available) {
+    root.innerHTML = emptyTrainerState(trainerWorkspace.reason);
+    return;
+  }
+
+  const { organization, clients, atRisk, approvals, analytics } = trainerWorkspace;
+  const topRisks = atRisk.slice(0, 4);
+  root.innerHTML = `
+    <div class="trainer-header">
+      <div>
+        <p class="eyebrow">Trainer workspace</p>
+        <h2>${escapeHtml(organization.name)}</h2>
+        <p class="muted">Operational queue for assigned clients, AI plan reviews, and adherence risks.</p>
+      </div>
+      <button id="refreshTrainerWorkspaceBtn" type="button">Refresh workspace</button>
+    </div>
+
+    <section class="trainer-kpi-grid">
+      ${trainerKpiCard("Assigned clients", analytics.assigned_clients, "Active trainer roster")}
+      ${trainerKpiCard("At risk", analytics.at_risk_clients, "Needs trainer follow-up")}
+      ${trainerKpiCard("Plan reviews", analytics.pending_plan_reviews, "AI plans waiting")}
+      ${trainerKpiCard("Avg adherence", `${Math.round((analytics.average_adherence_rate || 0) * 100)}%`, "Current client execution")}
+    </section>
+
+    <section class="trainer-layout">
+      <article class="panel trainer-table-panel">
+        <header>
+          <h3>Assigned clients</h3>
+          <span>${clients.length} clients</span>
+        </header>
+        ${renderAssignedClients(clients)}
+      </article>
+      <article class="panel">
+        <header>
+          <h3>At-risk clients</h3>
+          <span>Deterministic signals</span>
+        </header>
+        ${renderAtRiskClients(topRisks)}
+      </article>
+    </section>
+
+    <section class="trainer-layout lower">
+      <article class="panel">
+        <header>
+          <h3>Pending AI plan approvals</h3>
+          <span>${approvals.length} pending</span>
+        </header>
+        ${renderPlanApprovals(approvals)}
+      </article>
+      <article class="panel">
+        <header>
+          <h3>Progress summary</h3>
+          <span>Assigned roster</span>
+        </header>
+        ${renderProgressWidgets(clients)}
+      </article>
+    </section>
+  `;
+  $("#refreshTrainerWorkspaceBtn").addEventListener("click", refreshTrainerWorkspace);
+  $$("[data-plan-action]").forEach((button) => {
+    button.addEventListener("click", () => handlePlanReviewAction(button));
+  });
+}
+
+function emptyTrainerState(message) {
+  return `
+    <article class="panel trainer-empty">
+      <p class="eyebrow">Trainer workspace</p>
+      <h2>Workspace unavailable</h2>
+      <p class="muted">${escapeHtml(message || "Sign in with a trainer, admin, or owner account attached to an organization.")}</p>
+    </article>
+  `;
+}
+
+function trainerKpiCard(labelText, value, detail) {
+  return `
+    <article class="stat trainer-stat">
+      <span>${escapeHtml(labelText)}</span>
+      <strong>${escapeHtml(String(value ?? 0))}</strong>
+      <p>${escapeHtml(detail)}</p>
+    </article>
+  `;
+}
+
+function renderAssignedClients(clients) {
+  if (!clients.length) {
+    return `<p class="muted">No assigned clients found for this trainer account.</p>`;
+  }
+  return `
+    <div class="client-table">
+      <div class="client-row client-head">
+        <span>Member</span>
+        <span>Active goal</span>
+        <span>Adherence</span>
+        <span>Latest workout</span>
+        <span>Risk</span>
+        <span>Membership</span>
+      </div>
+      ${clients.map((client) => renderClientRow(client)).join("")}
+    </div>
+  `;
+}
+
+function renderClientRow(client) {
+  const goal = client.active_goals?.[0];
+  const risk = riskLevel(client.risk_signals || []);
+  return `
+    <div class="client-row">
+      <div>
+        <strong>${escapeHtml(client.member.name)}</strong>
+        <small>${escapeHtml(label(client.member.fitness_goal))}</small>
+      </div>
+      <span>${goal ? escapeHtml(goal.title) : "No active goal"}</span>
+      <span>${percent(client.adherence.adherence_rate)}</span>
+      <span>${client.latest_workout.performed_on ? formatDateShort(client.latest_workout.performed_on) : "No workout"}</span>
+      <span class="risk-pill ${risk.className}">${risk.label}</span>
+      <span>${membershipLabel(client.membership)}</span>
+    </div>
+  `;
+}
+
+function renderAtRiskClients(clients) {
+  if (!clients.length) {
+    return `<p class="muted">No deterministic risk signals are currently active.</p>`;
+  }
+  return `
+    <div class="risk-list">
+      ${clients
+        .map(
+          (client) => `
+          <article class="risk-card">
+            <div class="risk-card-head">
+              <strong>${escapeHtml(client.member.name)}</strong>
+              <span class="risk-pill ${riskLevel(client.risk_signals).className}">${riskLevel(client.risk_signals).label}</span>
+            </div>
+            <ul>
+              ${(client.risk_signals || [])
+                .map((signal) => `<li><strong>${escapeHtml(label(signal.code))}</strong><span>${escapeHtml(signal.message)}</span></li>`)
+                .join("")}
+            </ul>
+          </article>
+        `,
+        )
+        .join("")}
+    </div>
+  `;
+}
+
+function renderPlanApprovals(approvals) {
+  if (!approvals.length) {
+    return `<p class="muted">No AI-generated plans are waiting for trainer review.</p>`;
+  }
+  return `
+    <div class="approval-list">
+      ${approvals
+        .map(
+          (plan) => `
+          <article class="approval-card">
+            <div>
+              <strong>${escapeHtml(plan.member.name)}</strong>
+              <p>${escapeHtml(plan.title)}</p>
+              <small>${formatDateShort(plan.week_start)} | ${escapeHtml(label(plan.status))}</small>
+            </div>
+            <p class="muted">${escapeHtml(plan.rationale || "No rationale provided.")}</p>
+            <label>Trainer note<textarea data-plan-note="${plan.plan_id}" placeholder="Add approval, modification, or rejection notes"></textarea></label>
+            <div class="approval-actions">
+              <button class="primary" type="button" data-plan-action="approve" data-plan-id="${plan.plan_id}">Approve</button>
+              <button type="button" data-plan-action="modify" data-plan-id="${plan.plan_id}">Mark modified</button>
+              <button type="button" data-plan-action="reject" data-plan-id="${plan.plan_id}">Reject</button>
+            </div>
+          </article>
+        `,
+        )
+        .join("")}
+    </div>
+  `;
+}
+
+function renderProgressWidgets(clients) {
+  const adherence = average(clients.map((client) => client.adherence.adherence_rate));
+  const attendance = average(clients.map((client) => client.membership.days_remaining === null ? 0 : 1));
+  const completion = average(clients.map((client) => client.latest_workout.completion_rate || 0));
+  const goals = clients.flatMap((client) => client.active_goals || []);
+  const overdueGoals = goals.filter((goal) => goal.target_date && new Date(goal.target_date) < new Date()).length;
+  return `
+    <div class="progress-widget-grid">
+      ${progressWidget("Consistency", percent(adherence), "Average adherence across assigned clients")}
+      ${progressWidget("Goal progress", `${Math.max(0, goals.length - overdueGoals)}/${goals.length}`, "Active goals not overdue")}
+      ${progressWidget("Attendance trend", percent(attendance), "Clients with active membership context")}
+      ${progressWidget("Workout completion", percent(completion), "Latest workout completion average")}
+    </div>
+  `;
+}
+
+function progressWidget(title, value, detail) {
+  return `
+    <div class="progress-widget">
+      <span>${escapeHtml(title)}</span>
+      <strong>${escapeHtml(value)}</strong>
+      <p>${escapeHtml(detail)}</p>
+    </div>
+  `;
+}
+
+async function refreshTrainerWorkspace() {
+  await loadTrainerWorkspace();
+  renderTrainerWorkspace();
+}
+
+async function handlePlanReviewAction(button) {
+  const planId = button.dataset.planId;
+  const action = button.dataset.planAction;
+  const note = $(`[data-plan-note="${planId}"]`)?.value || "";
+  const organizationId = trainerWorkspace?.organization?.id;
+  if (!organizationId || !planId) return;
+  const status = action === "approve" ? "trainer_approved" : "trainer_modified";
+  const defaultNote =
+    action === "approve"
+      ? "Approved by trainer."
+      : action === "reject"
+        ? "Rejected by trainer. Generate or modify before assigning."
+        : "Modified by trainer before assignment.";
+  setButtonLoading(button, true, "Saving...");
+  try {
+    await api(`/api/organizations/${organizationId}/workout-plans/${planId}/review`, {
+      method: "POST",
+      body: JSON.stringify({
+        status,
+        trainer_notes: note.trim() || defaultNote,
+      }),
+    });
+    await refreshTrainerWorkspace();
+  } catch (error) {
+    button.textContent = error.message || "Failed";
+  } finally {
+    setButtonLoading(button, false);
+  }
 }
 
 function todayPlanContext(plan) {
@@ -617,6 +895,29 @@ function label(value) {
   return String(value).replaceAll("_", " ");
 }
 
+function percent(value) {
+  return `${Math.round((Number(value) || 0) * 100)}%`;
+}
+
+function average(values) {
+  const valid = values.filter((value) => Number.isFinite(Number(value)));
+  if (!valid.length) return 0;
+  return valid.reduce((total, value) => total + Number(value), 0) / valid.length;
+}
+
+function membershipLabel(membership) {
+  if (!membership?.status) return "No membership";
+  const suffix = membership.days_remaining === null || membership.days_remaining === undefined ? "" : ` (${membership.days_remaining}d)`;
+  return `${label(membership.status)}${suffix}`;
+}
+
+function riskLevel(signals = []) {
+  if (!signals.length) return { label: "Clear", className: "low" };
+  if (signals.some((signal) => signal.severity === "high")) return { label: "High", className: "high" };
+  if (signals.length >= 2) return { label: "Medium", className: "medium" };
+  return { label: "Watch", className: "medium" };
+}
+
 function escapeHtml(value) {
   return String(value)
     .replaceAll("&", "&amp;")
@@ -998,10 +1299,12 @@ $("#profileForm").addEventListener("submit", async (event) => {
       method: "POST",
       body: JSON.stringify(profilePayload(event.currentTarget)),
     });
+    currentAccount = session.account;
     localStorage.setItem(AUTH_TOKEN_KEY, session.token);
     localStorage.setItem(ACTIVE_USER_KEY, String(session.profile.id));
     state = await api(`/api/users/${session.profile.id}/dashboard`);
     await loadActiveSession();
+    await loadTrainerWorkspace();
     showApp();
     render();
   } catch (error) {
@@ -1012,6 +1315,8 @@ $("#profileForm").addEventListener("submit", async (event) => {
 
 $("#demoBtn").addEventListener("click", async () => {
   localStorage.removeItem(AUTH_TOKEN_KEY);
+  currentAccount = null;
+  trainerWorkspace = null;
   const data = await api("/api/bootstrap");
   localStorage.setItem(ACTIVE_USER_KEY, String(data.user.id));
   state = data;
@@ -1024,7 +1329,9 @@ $("#switchProfileBtn").addEventListener("click", () => {
   localStorage.removeItem(AUTH_TOKEN_KEY);
   localStorage.removeItem(ACTIVE_USER_KEY);
   state = null;
+  currentAccount = null;
   activeSession = null;
+  trainerWorkspace = null;
   showOnboarding();
 });
 
@@ -1042,10 +1349,12 @@ $("#loginBtn").addEventListener("click", async () => {
       $("#loginError").textContent = "Account has no profile yet.";
       return;
     }
+    currentAccount = session.account;
     localStorage.setItem(AUTH_TOKEN_KEY, session.token);
     localStorage.setItem(ACTIVE_USER_KEY, String(session.profile.id));
     state = await api(`/api/users/${session.profile.id}/dashboard`);
     await loadActiveSession();
+    await loadTrainerWorkspace();
     showApp();
     render();
   } catch (error) {
