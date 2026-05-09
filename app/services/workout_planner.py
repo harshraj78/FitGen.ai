@@ -8,6 +8,7 @@ from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
 from app import models
+from app.services.explainability import ExplainabilityService
 
 
 EQUIPMENT_BY_GYM = {
@@ -103,6 +104,14 @@ class WorkoutPlanner:
         )
         self.db.add(plan)
         self.db.flush()
+        for reason in ExplainabilityService(self.db).deterministic_reasons(user, metrics, modifier):
+            ExplainabilityService(self.db).record(
+                user=user,
+                workout_plan_id=plan.id,
+                entity_type="workout_plan",
+                entity_id=plan.id,
+                **reason,
+            )
 
         for day_index, (day_name, day_focus, focus_blocks) in enumerate(WEEK_TEMPLATE, start=1):
             for focus in focus_blocks:
@@ -226,6 +235,15 @@ class WorkoutPlanner:
         )
         self.db.add(plan)
         self.db.flush()
+        ExplainabilityService(self.db).record(
+            user=user,
+            workout_plan_id=plan.id,
+            entity_type="workout_plan",
+            entity_id=plan.id,
+            reason_code="ai_plan_generated",
+            message="AI-assisted workout proposal was converted into a structured workout plan.",
+            metadata={"proposal_title": proposal["title"]},
+        )
 
         for index, exercise in enumerate(proposal["days"], start=1):
             day_name = exercise["day"]

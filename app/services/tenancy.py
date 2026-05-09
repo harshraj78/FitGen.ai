@@ -1,14 +1,16 @@
 from __future__ import annotations
 
-import json
 import re
-from datetime import date, datetime, timezone
+from datetime import date
 from typing import Iterable
 
-from fastapi import HTTPException
+from fastapi import Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app import models
+from app.db import get_db
+from app.services.auth import require_account
+from app.services.audit import AuditService
 
 
 OWNER_ROLES = {
@@ -52,6 +54,39 @@ def require_org_membership(
     return membership
 
 
+def org_member_query(db: Session, organization_id: int):
+    return db.query(models.UserProfile).filter(models.UserProfile.organization_id == organization_id)
+
+
+def org_workout_plan_query(db: Session, organization_id: int):
+    return db.query(models.WorkoutPlan).filter(models.WorkoutPlan.organization_id == organization_id)
+
+
+def org_goal_query(db: Session, organization_id: int):
+    return db.query(models.Goal).filter(models.Goal.organization_id == organization_id)
+
+
+def account_can_access_member(membership: models.OrganizationMembership, account: models.Account, member: models.UserProfile) -> bool:
+    if membership.role in COACH_ROLES:
+        if membership.role in {models.OrganizationRole.trainer.value, models.OrganizationRole.nutritionist.value}:
+            return member.assigned_trainer_id in (None, account.id)
+        return True
+    if membership.role == models.OrganizationRole.member.value:
+        return member.account_id == account.id
+    return False
+
+
+def require_roles(allowed_roles: Iterable[str] | None = None):
+    def dependency(
+        organization_id: int,
+        db: Session = Depends(get_db),
+        account: models.Account = Depends(require_account),
+    ) -> models.OrganizationMembership:
+        return require_org_membership(db, organization_id, account, allowed_roles)
+
+    return dependency
+
+
 def get_org_member(
     db: Session,
     organization_id: int,
@@ -70,12 +105,8 @@ def get_org_member(
     )
     if not member:
         raise HTTPException(status_code=404, detail="Organization member not found")
-    if membership.role == models.OrganizationRole.trainer.value and member.assigned_trainer_id not in (None, account.id):
-        raise HTTPException(status_code=403, detail="Trainer can only access assigned members")
-    if membership.role == models.OrganizationRole.nutritionist.value and member.assigned_trainer_id not in (None, account.id):
-        raise HTTPException(status_code=403, detail="Nutritionist can only access assigned members")
-    if membership.role == models.OrganizationRole.member.value and member.account_id != account.id:
-        raise HTTPException(status_code=403, detail="Member can only access their own profile")
+    if not account_can_access_member(membership, account, member):
+        raise HTTPException(status_code=403, detail="Account cannot access this organization member")
     return member
 
 
@@ -135,14 +166,11 @@ def write_audit(
     organization_id: int | None = None,
     metadata: dict | None = None,
 ) -> None:
-    db.add(
-        models.AuditLog(
-            organization_id=organization_id,
-            actor_account_id=account.id if account else None,
-            action=action,
-            entity_type=entity_type,
-            entity_id=entity_id,
-            metadata_json=json.dumps(metadata or {}, sort_keys=True),
-            created_at=datetime.now(timezone.utc).replace(tzinfo=None),
-        )
+    AuditService(db).record(
+        action,
+        entity_type,
+        entity_id,
+        actor_account=account,
+        organization_id=organization_id,
+        metadata=metadata,
     )

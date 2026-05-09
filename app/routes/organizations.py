@@ -7,6 +7,8 @@ from sqlalchemy.orm import Session
 from app import models, schemas
 from app.db import get_db
 from app.services.auth import require_account
+from app.services.explainability import ExplainabilityService
+from app.services.notifications import NotificationService
 from app.services.tenancy import ADMIN_ROLES, COACH_ROLES, OWNER_ROLES, get_org_member, normalize_slug, require_org_membership, require_plan_reviewer, serialize_goal, write_audit
 from app.services.workout_planner import WorkoutPlanner
 
@@ -169,7 +171,18 @@ def create_member(
     db.add(member)
     db.commit()
     db.refresh(member)
-    WorkoutPlanner(db).generate_week(member)
+    generated_plan = WorkoutPlanner(db).generate_week(member)
+    if member.assigned_trainer_id and generated_plan.status == models.PlanReviewStatus.pending_trainer_review.value:
+        NotificationService(db).emit(
+            models.NotificationEventType.ai_plan_pending_review.value,
+            "AI plan pending review",
+            f"{member.name}'s generated workout plan needs trainer review.",
+            organization_id=organization_id,
+            recipient_account_id=member.assigned_trainer_id,
+            entity_type="workout_plan",
+            entity_id=generated_plan.id,
+            payload={"member_id": member.id},
+        )
     write_audit(db, "member.created", "user_profile", member.id, account, organization_id)
     db.commit()
     return member
@@ -249,6 +262,20 @@ def record_payment(
     payment = models.Payment(organization_id=organization_id, member_id=member_id, **payload.model_dump())
     db.add(payment)
     write_audit(db, "payment.recorded", "payment", None, account, organization_id, {"status": payload.status})
+    if payload.status == models.PaymentStatus.paid.value:
+        member = db.get(models.UserProfile, member_id)
+        if member and member.account_id:
+            NotificationService(db).emit(
+                models.NotificationEventType.payment_received.value,
+                "Payment received",
+                f"Payment of {payload.currency} {payload.amount:.2f} has been recorded.",
+                organization_id=organization_id,
+                recipient_account_id=member.account_id,
+                recipient_user_id=member.id,
+                entity_type="payment",
+                entity_id=None,
+                payload={"amount": payload.amount, "currency": payload.currency},
+            )
     db.commit()
     db.refresh(payment)
     return payment
@@ -356,11 +383,48 @@ def review_workout_plan(
     if not plan or plan.organization_id != organization_id:
         raise HTTPException(status_code=404, detail="Workout plan not found")
     require_plan_reviewer(db, plan, account)
+    get_org_member(db, organization_id, plan.user_id, account, COACH_ROLES)
     plan.status = payload.status
     plan.trainer_notes = payload.trainer_notes
     plan.reviewed_by_account_id = account.id
     plan.reviewed_at = datetime.utcnow()
     write_audit(db, "workout_plan.reviewed", "workout_plan", plan.id, account, organization_id, {"status": payload.status})
+    if plan.user.account_id and payload.status == models.PlanReviewStatus.trainer_approved.value:
+        NotificationService(db).emit(
+            models.NotificationEventType.plan_approved.value,
+            "Workout plan approved",
+            f"Your trainer approved {plan.title}.",
+            organization_id=organization_id,
+            recipient_account_id=plan.user.account_id,
+            recipient_user_id=plan.user_id,
+            entity_type="workout_plan",
+            entity_id=plan.id,
+            payload={"status": payload.status},
+        )
     db.commit()
     db.refresh(plan)
     return {"workout_plan": WorkoutPlanner(db).serialize_plan(plan)}
+
+
+@router.get("/{organization_id}/workout-plans/{plan_id}/explainability", response_model=list[schemas.AIExplainabilityOut])
+def workout_plan_explainability(
+    organization_id: int,
+    plan_id: int,
+    db: Session = Depends(get_db),
+    account: models.Account = Depends(require_account),
+) -> list[dict]:
+    plan = db.get(models.WorkoutPlan, plan_id)
+    if not plan or plan.organization_id != organization_id:
+        raise HTTPException(status_code=404, detail="Workout plan not found")
+    get_org_member(db, organization_id, plan.user_id, account, COACH_ROLES | {models.OrganizationRole.member.value})
+    service = ExplainabilityService(db)
+    records = (
+        db.query(models.AIExplainabilityRecord)
+        .filter(
+            models.AIExplainabilityRecord.organization_id == organization_id,
+            models.AIExplainabilityRecord.workout_plan_id == plan_id,
+        )
+        .order_by(models.AIExplainabilityRecord.created_at)
+        .all()
+    )
+    return [service.serialize(record) for record in records]
