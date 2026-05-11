@@ -48,6 +48,8 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   return response.json();
 }
 
+export { request };
+
 export const api = {
   login(payload: { email: string; password: string }) {
     return request<AuthResponse>("/api/auth/login", { method: "POST", body: JSON.stringify(payload) });
@@ -64,8 +66,32 @@ export const api = {
   organization(id: number) {
     return request<OrganizationContext>(`/api/organizations/${id}`);
   },
+  createOrganization(payload: any) {
+    return request<Organization>("/api/organizations", { method: "POST", body: JSON.stringify(payload) });
+  },
+  createMembershipPlan(organizationId: number, payload: any) {
+    return request<any>(`/api/organizations/${organizationId}/membership-plans`, { method: "POST", body: JSON.stringify(payload) });
+  },
+  addStaff(organizationId: number, payload: { account_id: number; role: string }) {
+    return request<any>(`/api/organizations/${organizationId}/staff`, { method: "POST", body: JSON.stringify(payload) });
+  },
+  createOrganizationMember(organizationId: number, payload: any) {
+    return request<any>(`/api/organizations/${organizationId}/members`, { method: "POST", body: JSON.stringify(payload) });
+  },
   memberDashboard(profileId: number) {
     return request<Dashboard>(`/api/users/${profileId}/dashboard`);
+  },
+  createBodyMetrics(organizationId: number, profileId: number, payload: any) {
+    return request<any>(`/api/organizations/${organizationId}/business/members/${profileId}/body-metrics`, { method: "POST", body: JSON.stringify(payload) });
+  },
+  createGoal(organizationId: number, profileId: number, payload: any) {
+    return request<any>(`/api/organizations/${organizationId}/members/${profileId}/goals`, { method: "POST", body: JSON.stringify(payload) });
+  },
+  generateWeeklyPlan(profileId: number) {
+    return request<any>(`/api/users/${profileId}/plans/weekly`, { method: "POST" });
+  },
+  logWorkout(profileId: number, payload: any) {
+    return request<any>(`/api/users/${profileId}/workouts/logs`, { method: "POST", body: JSON.stringify(payload) });
   },
   businessDashboard(organizationId: number) {
     return request<BusinessDashboard>(`/api/organizations/${organizationId}/business/dashboard`);

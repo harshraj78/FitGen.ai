@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { AuthLayout } from "@/layouts/AuthLayout";
 import { useAuth } from "@/hooks/useAuth";
+import { api } from "@/services/api";
 
 export function LoginPage({ audience }: { audience: "business" | "member" }) {
   const auth = useAuth();
@@ -19,8 +20,12 @@ export function LoginPage({ audience }: { audience: "business" | "member" }) {
     setError("");
     setLoading(true);
     try {
-      await auth.login({ email, password });
-      navigate(isBusiness ? "/business" : "/app", { replace: true });
+      const profile = await auth.login({ email, password });
+      if (isBusiness) {
+        navigate(await businessLandingPath(), { replace: true });
+      } else {
+        navigate(profile ? "/app" : "/app/onboarding", { replace: true });
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not sign in.");
     } finally {
@@ -79,4 +84,17 @@ export function LoginPage({ audience }: { audience: "business" | "member" }) {
       </form>
     </AuthLayout>
   );
+}
+
+async function businessLandingPath() {
+  try {
+    const organizations = await api.organizations();
+    const organization = organizations[0];
+    if (!organization) return "/business/onboarding";
+    const context = await api.organization(organization.id);
+    if (context.role === "trainer" || context.role === "nutritionist") return "/business/actions";
+    return "/business";
+  } catch {
+    return "/business/onboarding";
+  }
 }

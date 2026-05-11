@@ -71,6 +71,18 @@ export function BusinessOverview() {
           </CardContent>
         </Card>
       </section>
+      <Card>
+        <CardHeader>
+          <CardTitle>Demo walkthrough</CardTitle>
+          <span className="text-sm text-muted-foreground">A crisp story for investor or customer demos</span>
+        </CardHeader>
+        <CardContent className="grid gap-3 md:grid-cols-4">
+          <WalkthroughStep step="1" title="Spot risk" detail="Open renewal intelligence and identify members with revenue at risk." />
+          <WalkthroughStep step="2" title="Assign action" detail="Use daily operations to see overdue renewals and inactive clients." />
+          <WalkthroughStep step="3" title="Coach response" detail="Compare trainer performance and plan approval load." />
+          <WalkthroughStep step="4" title="Prove outcomes" detail="Use transformation metrics to show measurable member progress." />
+        </CardContent>
+      </Card>
       <section className="grid gap-6 xl:grid-cols-2">
         <Card>
           <CardHeader>
@@ -112,6 +124,16 @@ export function BusinessOverview() {
           </CardContent>
         </Card>
       </section>
+    </div>
+  );
+}
+
+function WalkthroughStep({ step, title, detail }: { step: string; title: string; detail: string }) {
+  return (
+    <div className="rounded-md border bg-muted/30 p-4">
+      <span className="flex h-7 w-7 items-center justify-center rounded-full bg-foreground text-sm font-semibold text-background">{step}</span>
+      <p className="mt-3 font-medium">{title}</p>
+      <p className="mt-1 text-sm leading-6 text-muted-foreground">{detail}</p>
     </div>
   );
 }

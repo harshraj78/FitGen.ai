@@ -29,7 +29,8 @@ from app.services.review import WeeklyReviewService
 from app.services.workout_planner import WorkoutPlanner
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-STATIC_DIR = BASE_DIR / "frontend"
+LEGACY_STATIC_DIR = BASE_DIR / "frontend"
+MODERN_DIST_DIR = BASE_DIR / "frontend-modern" / "dist"
 logger = logging.getLogger("fitgen.api")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 
@@ -40,7 +41,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+if MODERN_DIST_DIR.exists():
+    app.mount("/assets", StaticFiles(directory=MODERN_DIST_DIR / "assets"), name="modern-assets")
+app.mount("/static", StaticFiles(directory=LEGACY_STATIC_DIR), name="legacy-static")
 app.include_router(organization_router, prefix="/api")
 app.include_router(trainer_workspace_router, prefix="/api")
 app.include_router(analytics_router, prefix="/api")
@@ -98,7 +101,9 @@ def startup() -> None:
 
 @app.get("/")
 def index() -> FileResponse:
-    return FileResponse(STATIC_DIR / "index.html")
+    if MODERN_DIST_DIR.exists():
+        return FileResponse(MODERN_DIST_DIR / "index.html")
+    return FileResponse(LEGACY_STATIC_DIR / "index.html")
 
 
 @app.get("/api/health")
@@ -347,7 +352,7 @@ def log_workout(
     db: Session = Depends(get_db),
     account: models.Account | None = Depends(_optional_account),
 ) -> dict:
-    _get_user(db, user_id, account)
+    user = _get_user(db, user_id, account)
     if payload.planned_exercise_id is not None:
         planned_exercise = db.get(models.WorkoutExercise, payload.planned_exercise_id)
         if not planned_exercise or planned_exercise.plan.user_id != user_id:
@@ -423,6 +428,15 @@ def export_report(
             f"Adjustment: {review.get('adjustments', 'Run weekly review after logging sessions')}",
         ]
     )
+
+
+@app.get("/{full_path:path}")
+def modern_spa(full_path: str) -> FileResponse:
+    if full_path.startswith("api/"):
+        raise HTTPException(status_code=404, detail="API endpoint not found")
+    if MODERN_DIST_DIR.exists():
+        return FileResponse(MODERN_DIST_DIR / "index.html")
+    return FileResponse(LEGACY_STATIC_DIR / "index.html")
 
 
 def _get_user(db: Session, user_id: int, account: models.Account | None = None) -> models.UserProfile:
