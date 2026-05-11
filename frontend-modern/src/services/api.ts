@@ -52,6 +52,9 @@ export const api = {
   login(payload: { email: string; password: string }) {
     return request<AuthResponse>("/api/auth/login", { method: "POST", body: JSON.stringify(payload) });
   },
+  businessDemo() {
+    return request<AuthResponse & { organization: any; credentials: Record<string, { email: string; password: string }> }>("/api/demo/business", { method: "POST" });
+  },
   me() {
     return request<AuthResponse>("/api/auth/me");
   },

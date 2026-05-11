@@ -1,4 +1,4 @@
-import { Dumbbell, Home, LogOut, Target, TrendingUp } from "lucide-react";
+import { ClipboardCheck, Dumbbell, Home, LogOut, Target, TrendingUp } from "lucide-react";
 import { NavLink, Outlet } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 
 const nav = [
   { to: "/app", label: "Today", icon: Home },
+  { to: "/app/onboarding", label: "Setup", icon: ClipboardCheck },
   { to: "/app/workout", label: "Workout", icon: Dumbbell },
   { to: "/app/progress", label: "Progress", icon: TrendingUp },
   { to: "/app/goals", label: "Goals", icon: Target },
@@ -30,7 +31,7 @@ export function MemberLayout() {
       <main className="mx-auto max-w-5xl px-5 py-6">
         <Outlet />
       </main>
-      <nav className="fixed inset-x-3 bottom-3 z-30 mx-auto grid max-w-md grid-cols-4 rounded-lg border bg-white/94 p-1 shadow-soft backdrop-blur">
+      <nav className="fixed inset-x-3 bottom-3 z-30 mx-auto grid max-w-lg grid-cols-5 rounded-lg border bg-white/94 p-1 shadow-soft backdrop-blur">
         {nav.map((item) => (
           <NavLink
             key={item.to}

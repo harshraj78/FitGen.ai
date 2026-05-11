@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Activity, Flame, Target, Trophy } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { MetricCard } from "@/components/MetricCard";
+import { DashboardSkeleton } from "@/components/DashboardSection";
 import { useActiveProfileId, useAuth } from "@/hooks/useAuth";
 import { label, money, percent } from "@/lib/utils";
 import { api } from "@/services/api";
@@ -15,7 +16,7 @@ export function MemberDashboard() {
     enabled: Boolean(profileId),
   });
 
-  if (dashboard.isLoading) return <div className="rounded-lg border bg-white p-6 text-sm text-muted-foreground">Loading member app...</div>;
+  if (dashboard.isLoading) return <DashboardSkeleton />;
   if (!dashboard.data) return <div className="rounded-lg border bg-white p-6">No member profile found.</div>;
 
   const data = dashboard.data;

@@ -10,6 +10,7 @@ type AuthContextValue = {
   isAuthenticated: boolean;
   isLoading: boolean;
   login: (payload: { email: string; password: string }) => Promise<Profile | null>;
+  startBusinessDemo: () => Promise<void>;
   logout: () => void;
 };
 
@@ -38,6 +39,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
         queryClient.setQueryData(["auth", "me"], response);
         return response.profile ?? null;
+      },
+      async startBusinessDemo() {
+        const response = await api.businessDemo();
+        setToken(response.token);
+        queryClient.setQueryData(["auth", "me"], response);
       },
       logout() {
         clearSession();

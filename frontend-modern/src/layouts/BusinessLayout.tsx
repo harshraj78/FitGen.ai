@@ -1,4 +1,4 @@
-import { Activity, BarChart3, CalendarCheck, LogOut, Target, Users } from "lucide-react";
+import { Activity, BarChart3, CalendarCheck, ClipboardCheck, LogOut, Target, Users } from "lucide-react";
 import { NavLink, Outlet } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 
 const nav = [
   { to: "/business", label: "Overview", icon: BarChart3 },
+  { to: "/business/onboarding", label: "Setup", icon: ClipboardCheck },
   { to: "/business/retention", label: "Retention", icon: Activity },
   { to: "/business/trainers", label: "Trainers", icon: Users },
   { to: "/business/actions", label: "Daily actions", icon: CalendarCheck },

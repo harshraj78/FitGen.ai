@@ -3,6 +3,7 @@ import { AlertTriangle, CheckCircle2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { MetricCard } from "@/components/MetricCard";
+import { DashboardSkeleton } from "@/components/DashboardSection";
 import { usePrimaryOrganization } from "@/hooks/useOrganization";
 import { label, money, percent } from "@/lib/utils";
 import { api } from "@/services/api";
@@ -15,7 +16,7 @@ export function BusinessOverview() {
     enabled: Boolean(org.organization?.id),
   });
 
-  if (org.isLoading || dashboard.isLoading) return <PageLoading label="Loading business workspace..." />;
+  if (org.isLoading || dashboard.isLoading) return <DashboardSkeleton />;
   if (!org.organization) return <EmptyState title="No organization found" detail="This account is not attached to a gym workspace yet." />;
   if (dashboard.error) return <EmptyState title="Business dashboard unavailable" detail={dashboard.error.message} />;
 
@@ -138,7 +139,7 @@ export function PageHeader({ eyebrow, title, subtitle }: { eyebrow: string; titl
 }
 
 export function PageLoading({ label: text }: { label: string }) {
-  return <div className="rounded-lg border bg-card p-6 text-sm text-muted-foreground">{text}</div>;
+  return <DashboardSkeleton />;
 }
 
 export function EmptyState({ title, detail }: { title: string; detail: string }) {

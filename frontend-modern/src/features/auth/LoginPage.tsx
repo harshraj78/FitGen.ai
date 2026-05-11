@@ -28,6 +28,20 @@ export function LoginPage({ audience }: { audience: "business" | "member" }) {
     }
   }
 
+  async function startDemo() {
+    if (!isBusiness) return;
+    setError("");
+    setLoading(true);
+    try {
+      await auth.startBusinessDemo();
+      navigate("/business/onboarding", { replace: true });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not load demo workspace.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
     <AuthLayout
       audience={audience}
@@ -57,6 +71,11 @@ export function LoginPage({ audience }: { audience: "business" | "member" }) {
         <Button disabled={loading} type="submit">
           {loading ? "Signing in..." : "Continue"}
         </Button>
+        {isBusiness ? (
+          <Button disabled={loading} type="button" variant="secondary" onClick={startDemo}>
+            Load demo gym workspace
+          </Button>
+        ) : null}
       </form>
     </AuthLayout>
   );
