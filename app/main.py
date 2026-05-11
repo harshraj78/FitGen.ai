@@ -22,6 +22,7 @@ from app.routes.organizations import router as organization_router
 from app.routes.sessions import router as session_router
 from app.routes.trainer_workspace import router as trainer_workspace_router
 from app.services.auth import account_dict, create_session, get_account_from_authorization, hash_password, normalize_email, verify_password
+from app.services.demo_seed import DemoSeedService
 from app.services.diet_planner import DietPlanner
 from app.services.llm import LLMService
 from app.services.review import WeeklyReviewService
@@ -207,6 +208,11 @@ def bootstrap(db: Session = Depends(get_db)) -> dict:
         DietPlanner(db).generate_week(user)
         WeeklyReviewService(db).create_review(user)
     return dashboard(user.id, db, None)
+
+
+@app.post("/api/demo/business")
+def business_demo(db: Session = Depends(get_db)) -> dict:
+    return DemoSeedService(db).seed_business_demo()
 
 
 @app.get("/api/users/{user_id}/dashboard", response_model=schemas.DashboardOut)

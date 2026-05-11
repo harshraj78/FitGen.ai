@@ -1,6 +1,7 @@
 let state = null;
 let currentAccount = null;
 let trainerWorkspace = null;
+let businessWorkspace = null;
 const ACTIVE_USER_KEY = "fitgen-active-user-id";
 const AUTH_TOKEN_KEY = "fitgen-auth-token";
 let selectedWorkoutDayIndex = null;
@@ -62,6 +63,7 @@ async function load() {
       state = await api(`/api/users/${profileId}/dashboard`);
       await loadActiveSession();
       await loadTrainerWorkspace();
+      await loadBusinessWorkspace();
       showApp();
       render();
       return;
@@ -82,6 +84,7 @@ async function load() {
     state = await api(`/api/users/${activeUserId}/dashboard`);
     await loadActiveSession();
     trainerWorkspace = null;
+    businessWorkspace = null;
     showApp();
     render();
   } catch (error) {
@@ -106,6 +109,7 @@ async function refreshDashboardAndSession() {
   state = await api(`/api/users/${state.user.id}/dashboard`);
   await loadActiveSession();
   await loadTrainerWorkspace();
+  await loadBusinessWorkspace();
   render();
 }
 
@@ -131,11 +135,32 @@ async function loadTrainerWorkspace() {
   }
 }
 
+async function loadBusinessWorkspace() {
+  businessWorkspace = null;
+  if (!currentAccount) return;
+  try {
+    const organizations = await api("/api/organizations");
+    const organization = organizations[0];
+    if (!organization) {
+      businessWorkspace = { available: false, reason: "No organization workspace is attached to this account yet." };
+      return;
+    }
+    const [dashboard, transformation] = await Promise.all([
+      api(`/api/organizations/${organization.id}/business/dashboard`),
+      api(`/api/organizations/${organization.id}/business/transformations/gym`),
+    ]);
+    businessWorkspace = { available: true, organization, dashboard, transformation };
+  } catch (error) {
+    businessWorkspace = { available: false, reason: error.message || "Business operations dashboard is available to gym owners and admins." };
+  }
+}
+
 function render() {
   renderProfile();
   renderStats();
   renderCoachCockpit();
   renderCoachStrip();
+  renderBusinessDashboard();
   renderTrainerWorkspace();
   renderWorkout();
   renderDiet();
@@ -326,6 +351,336 @@ function trainerKpiCard(labelText, value, detail) {
       <p>${escapeHtml(detail)}</p>
     </article>
   `;
+}
+
+function renderBusinessDashboard() {
+  const root = $("#businessDashboardRoot");
+  if (!root) return;
+  if (!businessWorkspace) {
+    root.innerHTML = businessEmptyState("Business operations dashboard needs a signed-in gym owner or admin account.");
+    return;
+  }
+  if (!businessWorkspace.available) {
+    root.innerHTML = businessEmptyState(businessWorkspace.reason);
+    return;
+  }
+
+  const { organization, dashboard, transformation } = businessWorkspace;
+  const revenue = dashboard.revenue || {};
+  const forecast = dashboard.renewal_forecast || {};
+  const actions = dashboard.daily_actions?.actions || [];
+  const trainers = dashboard.trainer_performance || [];
+  const atRisk = dashboard.at_risk_members || [];
+  root.innerHTML = `
+    <div class="business-header">
+      <div>
+        <p class="eyebrow">Business operations</p>
+        <h2>${escapeHtml(organization.name)}</h2>
+        <p class="muted">Revenue, retention, trainer performance, and today's follow-up queue.</p>
+      </div>
+      <button id="refreshBusinessDashboardBtn" type="button">Refresh business data</button>
+    </div>
+
+    <section class="business-kpi-grid">
+      ${businessMetricCard("Monthly revenue", money(revenue.monthly_recurring_revenue), "Normalized active membership value")}
+      ${businessMetricCard("Active memberships", revenue.active_memberships || 0, "Currently active and not expired")}
+      ${businessMetricCard("Expiring soon", revenue.expiring_memberships_30d || 0, "Renewals due in 30 days")}
+      ${businessMetricCard("Unpaid members", revenue.unpaid_members?.length || 0, `${money(revenue.overdue_revenue)} overdue`)}
+      ${businessMetricCard("High-risk renewals", forecast.high_risk_renewals || 0, `${money(forecast.revenue_at_risk)} at risk`)}
+      ${businessMetricCard("Today's actions", actions.length, "Open operational follow-ups")}
+    </section>
+
+    <section class="business-layout">
+      <article class="panel business-action-panel">
+        <header>
+          <h3>Daily operations</h3>
+          <span>What staff should act on today</span>
+        </header>
+        ${renderDailyActions(actions)}
+      </article>
+      <article class="panel">
+        <header>
+          <h3>Renewal risk</h3>
+          <span>${atRisk.length} at-risk members</span>
+        </header>
+        ${renderRenewalRiskTable(atRisk)}
+      </article>
+    </section>
+
+    <section class="business-layout">
+      <article class="panel">
+        <header>
+          <h3>Revenue operations</h3>
+          <span>Renewal and retention trends</span>
+        </header>
+        ${renderRevenueOperations(revenue, forecast)}
+      </article>
+      <article class="panel">
+        <header>
+          <h3>Trainer performance</h3>
+          <span>Owner comparison view</span>
+        </header>
+        ${renderTrainerPerformanceTable(trainers)}
+      </article>
+    </section>
+
+    <section class="business-layout transformation-layout">
+      <article class="panel">
+        <header>
+          <h3>Transformation dashboard</h3>
+          <span>Outcome proof across members</span>
+        </header>
+        ${renderTransformationDashboard(transformation)}
+      </article>
+      <article class="panel">
+        <header>
+          <h3>Unpaid members</h3>
+          <span>Collections queue</span>
+        </header>
+        ${renderUnpaidMembers(revenue.unpaid_members || [])}
+      </article>
+    </section>
+  `;
+  $("#refreshBusinessDashboardBtn").addEventListener("click", refreshBusinessWorkspace);
+}
+
+function businessEmptyState(message) {
+  return `
+    <article class="panel trainer-empty business-empty">
+      <p class="eyebrow">Business operations</p>
+      <h2>Dashboard unavailable</h2>
+      <p class="muted">${escapeHtml(message || "Sign in with a gym owner or admin account attached to an organization.")}</p>
+    </article>
+  `;
+}
+
+function businessMetricCard(labelText, value, detail) {
+  return `
+    <article class="stat business-stat">
+      <span>${escapeHtml(labelText)}</span>
+      <strong>${escapeHtml(String(value ?? 0))}</strong>
+      <p>${escapeHtml(detail)}</p>
+    </article>
+  `;
+}
+
+function renderDailyActions(actions) {
+  if (!actions.length) {
+    return `<p class="muted">No urgent follow-up actions are currently open.</p>`;
+  }
+  return `
+    <div class="business-action-list">
+      ${actions
+        .slice(0, 8)
+        .map(
+          (action) => `
+          <article class="business-action-card">
+            <div class="business-action-top">
+              <span class="risk-pill ${action.priority === "high" ? "high" : "medium"}">${escapeHtml(label(action.priority))}</span>
+              <span>${action.due_on ? formatDateShort(action.due_on) : "No due date"}</span>
+            </div>
+            <strong>${escapeHtml(action.title)}</strong>
+            <p>${escapeHtml(action.message)}</p>
+            <small>${escapeHtml(action.member?.name || "Member")} | ${escapeHtml(label(action.workflow_type))}</small>
+          </article>
+        `,
+        )
+        .join("")}
+    </div>
+  `;
+}
+
+function renderRenewalRiskTable(risks) {
+  if (!risks.length) {
+    return `<p class="muted">No high renewal-risk members found in the current forecast window.</p>`;
+  }
+  return `
+    <div class="business-table-wrap">
+      <div class="business-table renewal-table">
+        <div class="business-row business-head">
+          <span>Member</span>
+          <span>Risk</span>
+          <span>Membership</span>
+          <span>Reasons</span>
+          <span>Follow-up</span>
+        </div>
+        ${risks
+          .slice(0, 8)
+          .map((risk) => {
+            const topSignals = (risk.signals || []).slice(0, 3);
+            return `
+              <div class="business-row">
+                <div>
+                  <strong>${escapeHtml(risk.member.name)}</strong>
+                  <small>${escapeHtml(label(risk.member.fitness_goal))}</small>
+                </div>
+                <span class="risk-pill ${risk.level === "critical" ? "high" : risk.level}">${Math.round(risk.score)} | ${escapeHtml(label(risk.level))}</span>
+                <span>${membershipLabel(risk.membership)}</span>
+                <span>${topSignals.map((signal) => escapeHtml(label(signal.code))).join(", ") || "No signal"}</span>
+                <span>${renewalRecommendation(risk)}</span>
+              </div>
+            `;
+          })
+          .join("")}
+      </div>
+    </div>
+  `;
+}
+
+function renderRevenueOperations(revenue, forecast) {
+  const renewalTrend = revenue.renewal_trends || [];
+  const retentionTrend = revenue.retention_trends || [];
+  return `
+    <div class="trend-grid">
+      <div>
+        <h4>Renewal trend</h4>
+        ${renderMiniBars(renewalTrend, "renewals", "renewals")}
+      </div>
+      <div>
+        <h4>Retention trend</h4>
+        ${renderRetentionTrend(retentionTrend)}
+      </div>
+    </div>
+    <div class="forecast-strip">
+      <div><span>Expiring window</span><strong>${forecast.expiring_memberships || 0}</strong></div>
+      <div><span>Expected renewals</span><strong>${forecast.expected_renewals || 0}</strong></div>
+      <div><span>Renewal probability</span><strong>${percent(forecast.renewal_probability || 0)}</strong></div>
+      <div><span>Forecast revenue</span><strong>${money(forecast.forecast_revenue)}</strong></div>
+    </div>
+  `;
+}
+
+function renderMiniBars(points, key, labelText) {
+  if (!points.length) return `<p class="muted">No trend data yet.</p>`;
+  const max = Math.max(1, ...points.map((point) => Number(point[key]) || 0));
+  return `
+    <div class="mini-bar-list">
+      ${points
+        .map(
+          (point) => `
+          <div class="mini-bar-row">
+            <span>${escapeHtml(point.period)}</span>
+            <i><b style="width:${Math.round(((Number(point[key]) || 0) / max) * 100)}%"></b></i>
+            <strong>${Number(point[key]) || 0}</strong>
+          </div>
+        `,
+        )
+        .join("")}
+    </div>
+    <p class="muted trend-note">${escapeHtml(labelText)} by month</p>
+  `;
+}
+
+function renderRetentionTrend(points) {
+  if (!points.length) return `<p class="muted">No retention trend data yet.</p>`;
+  return `
+    <div class="retention-trend-list">
+      ${points
+        .map(
+          (point) => `
+          <div class="retention-trend-row">
+            <strong>${escapeHtml(point.period)}</strong>
+            <span>${point.expired || 0} expired</span>
+            <span>${point.churned || 0} churned</span>
+          </div>
+        `,
+        )
+        .join("")}
+    </div>
+  `;
+}
+
+function renderTrainerPerformanceTable(trainers) {
+  if (!trainers.length) {
+    return `<p class="muted">No trainer roster or assigned clients found yet.</p>`;
+  }
+  return `
+    <div class="business-table-wrap">
+      <div class="business-table trainer-performance-table">
+        <div class="business-row business-head">
+          <span>Trainer</span>
+          <span>Clients</span>
+          <span>Retention</span>
+          <span>Adherence</span>
+          <span>Goal success</span>
+          <span>Risks</span>
+        </div>
+        ${trainers
+          .map(
+            (trainer) => `
+            <div class="business-row">
+              <div>
+                <strong>${escapeHtml(trainer.trainer_email || `Trainer ${trainer.trainer_account_id}`)}</strong>
+                <small>${trainer.overdue_approvals || 0} overdue approvals</small>
+              </div>
+              <span>${trainer.active_client_count || 0}</span>
+              <span>${percent(trainer.client_retention_rate || 0)}</span>
+              <span>${percent(trainer.avg_client_adherence || 0)}</span>
+              <span>${percent(trainer.goal_success_rate || 0)}</span>
+              <span>${trainer.inactive_clients || 0} inactive, ${trainer.high_risk_clients || 0} high-risk</span>
+            </div>
+          `,
+          )
+          .join("")}
+      </div>
+    </div>
+  `;
+}
+
+function renderTransformationDashboard(transformation = {}) {
+  const trainerSuccess = transformation.trainer_success || [];
+  return `
+    <div class="transformation-metrics">
+      ${progressWidget("Members tracked", transformation.members_tracked || 0, "Members included in outcome analytics")}
+      ${progressWidget("Body improvements", transformation.members_with_body_improvements || 0, "Members with improved recorded metrics")}
+      ${progressWidget("Goal completion", percent((transformation.goal_completion_pct || 0) / 100), "Gym-wide goal completion")}
+      ${progressWidget("Milestones", transformation.milestones_90d || 0, "Transformation wins in 90 days")}
+    </div>
+    <div class="trainer-success-list">
+      ${trainerSuccess.length ? trainerSuccess.map(renderTrainerTransformationRow).join("") : `<p class="muted">No trainer transformation metrics yet.</p>`}
+    </div>
+  `;
+}
+
+function renderTrainerTransformationRow(trainer) {
+  return `
+    <div class="trainer-success-row">
+      <strong>Trainer ${trainer.trainer_account_id}</strong>
+      <span>${trainer.active_clients || 0} active clients</span>
+      <span>${trainer.clients_with_improvements || 0} improving</span>
+      <span>${percent(trainer.goal_success_rate || 0)} goal success</span>
+      <span>${trainer.milestones_90d || 0} milestones</span>
+    </div>
+  `;
+}
+
+function renderUnpaidMembers(members) {
+  if (!members.length) {
+    return `<p class="muted">No unpaid member balances are currently open.</p>`;
+  }
+  return `
+    <div class="unpaid-list">
+      ${members
+        .slice(0, 8)
+        .map(
+          (item) => `
+          <div class="unpaid-row">
+            <div>
+              <strong>${escapeHtml(item.member.name)}</strong>
+              <span>${item.oldest_due_on ? `Due ${formatDateShort(item.oldest_due_on)}` : "No due date"}</span>
+            </div>
+            <strong>${money(item.amount_due)}</strong>
+          </div>
+        `,
+        )
+        .join("")}
+    </div>
+  `;
+}
+
+async function refreshBusinessWorkspace() {
+  await loadBusinessWorkspace();
+  renderBusinessDashboard();
 }
 
 function renderAssignedClients(clients) {
@@ -899,6 +1254,11 @@ function percent(value) {
   return `${Math.round((Number(value) || 0) * 100)}%`;
 }
 
+function money(value, currency = "Rs") {
+  const amount = Math.round(Number(value) || 0);
+  return `${currency} ${amount.toLocaleString()}`;
+}
+
 function average(values) {
   const valid = values.filter((value) => Number.isFinite(Number(value)));
   if (!valid.length) return 0;
@@ -916,6 +1276,16 @@ function riskLevel(signals = []) {
   if (signals.some((signal) => signal.severity === "high")) return { label: "High", className: "high" };
   if (signals.length >= 2) return { label: "Medium", className: "medium" };
   return { label: "Watch", className: "medium" };
+}
+
+function renewalRecommendation(risk) {
+  const codes = new Set((risk.signals || []).map((signal) => signal.code));
+  if (codes.has("expired_membership")) return "Call today and collect renewal decision.";
+  if (codes.has("renewal_window")) return "Confirm renewal intent before expiry.";
+  if (codes.has("inactivity") || codes.has("no_recent_attendance")) return "Assign trainer follow-up and restart attendance.";
+  if (codes.has("goal_stagnation")) return "Review goals and show next milestone.";
+  if (codes.has("lack_of_trainer_engagement")) return "Book trainer check-in.";
+  return "Monitor and keep engagement warm.";
 }
 
 function escapeHtml(value) {
@@ -1305,6 +1675,7 @@ $("#profileForm").addEventListener("submit", async (event) => {
     state = await api(`/api/users/${session.profile.id}/dashboard`);
     await loadActiveSession();
     await loadTrainerWorkspace();
+    await loadBusinessWorkspace();
     showApp();
     render();
   } catch (error) {
@@ -1317,6 +1688,7 @@ $("#demoBtn").addEventListener("click", async () => {
   localStorage.removeItem(AUTH_TOKEN_KEY);
   currentAccount = null;
   trainerWorkspace = null;
+  businessWorkspace = null;
   const data = await api("/api/bootstrap");
   localStorage.setItem(ACTIVE_USER_KEY, String(data.user.id));
   state = data;
@@ -1332,6 +1704,7 @@ $("#switchProfileBtn").addEventListener("click", () => {
   currentAccount = null;
   activeSession = null;
   trainerWorkspace = null;
+  businessWorkspace = null;
   showOnboarding();
 });
 
@@ -1355,6 +1728,7 @@ $("#loginBtn").addEventListener("click", async () => {
     state = await api(`/api/users/${session.profile.id}/dashboard`);
     await loadActiveSession();
     await loadTrainerWorkspace();
+    await loadBusinessWorkspace();
     showApp();
     render();
   } catch (error) {
