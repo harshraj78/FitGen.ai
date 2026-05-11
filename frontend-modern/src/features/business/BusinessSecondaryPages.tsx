@@ -1,6 +1,8 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { usePrimaryOrganization } from "@/hooks/useOrganization";
 import { label, money, percent } from "@/lib/utils";
 import { api } from "@/services/api";
@@ -101,12 +103,18 @@ export function TrainerPerformancePage() {
 }
 
 export function DailyActionsPage() {
-  const { dashboard } = useBusinessData();
-  if (dashboard.isLoading) return <PageLoading label="Loading daily operations..." />;
+  const { org, dashboard } = useBusinessData();
+  const approvals = useQuery({
+    queryKey: ["trainer-approvals", org.organization?.id],
+    queryFn: () => api.pendingApprovals(org.organization!.id),
+    enabled: Boolean(org.organization?.id),
+  });
+  if (dashboard.isLoading || approvals.isLoading) return <PageLoading label="Loading daily operations..." />;
   if (!dashboard.data) return <EmptyState title="Actions unavailable" detail={dashboard.error?.message || "No action data found."} />;
   return (
     <div className="grid gap-6">
       <PageHeader eyebrow="Daily operations" title="What should staff act on today?" subtitle="A focused queue for renewals, inactivity, approvals, and stalled progress." />
+      <PlanApprovalPanel organizationId={org.organization?.id} approvals={approvals.data || []} />
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {dashboard.data.daily_actions.actions.map((action) => (
           <Card key={`${action.workflow_type}-${action.member.id}-${action.title}`}>
@@ -123,6 +131,60 @@ export function DailyActionsPage() {
         ))}
       </section>
     </div>
+  );
+}
+
+function PlanApprovalPanel({ organizationId, approvals }: { organizationId?: number; approvals: any[] }) {
+  const queryClient = useQueryClient();
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const mutation = useMutation({
+    mutationFn: ({ planId, status }: { planId: number; status: "trainer_approved" | "trainer_modified" }) =>
+      api.reviewWorkoutPlan(organizationId!, planId, {
+        status,
+        trainer_notes: status === "trainer_approved" ? "Approved from daily operations." : "Marked modified from daily operations.",
+      }),
+    onSuccess: async () => {
+      setMessage("Plan review saved.");
+      setError("");
+      await queryClient.invalidateQueries({ queryKey: ["trainer-approvals", organizationId] });
+      await queryClient.invalidateQueries({ queryKey: ["business-dashboard", organizationId] });
+    },
+    onError: (err) => {
+      setMessage("");
+      setError(err instanceof Error ? err.message : "Could not save plan review.");
+    },
+  });
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Pending AI plan approvals</CardTitle>
+        <span className="text-sm text-muted-foreground">{approvals.length} waiting</span>
+      </CardHeader>
+      <CardContent className="grid gap-3">
+        {message ? <p className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{message}</p> : null}
+        {error ? <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p> : null}
+        {!approvals.length ? <p className="text-sm text-muted-foreground">No AI plans are waiting for review.</p> : null}
+        {approvals.slice(0, 5).map((plan) => (
+          <div className="grid gap-3 rounded-md border p-3 lg:grid-cols-[1fr_auto]" key={plan.plan_id}>
+            <div>
+              <p className="font-medium">{plan.member.name}</p>
+              <p className="mt-1 text-sm text-muted-foreground">{plan.title} | {plan.week_start}</p>
+              <p className="mt-2 text-sm text-muted-foreground">{plan.rationale || "No rationale provided."}</p>
+            </div>
+            <div className="flex flex-wrap items-start gap-2">
+              <Button disabled={!organizationId || mutation.isPending} onClick={() => mutation.mutate({ planId: plan.plan_id, status: "trainer_approved" })}>
+                Approve
+              </Button>
+              <Button disabled={!organizationId || mutation.isPending} variant="secondary" onClick={() => mutation.mutate({ planId: plan.plan_id, status: "trainer_modified" })}>
+                Mark modified
+              </Button>
+            </div>
+          </div>
+        ))}
+      </CardContent>
+    </Card>
   );
 }
 

@@ -105,4 +105,7 @@ export const api = {
   pendingApprovals(organizationId: number) {
     return request<any[]>(`/api/organizations/${organizationId}/trainer/plan-approvals/pending`);
   },
+  reviewWorkoutPlan(organizationId: number, planId: number, payload: { status: "trainer_approved" | "trainer_modified"; trainer_notes: string }) {
+    return request<any>(`/api/organizations/${organizationId}/workout-plans/${planId}/review`, { method: "POST", body: JSON.stringify(payload) });
+  },
 };

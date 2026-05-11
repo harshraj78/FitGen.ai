@@ -81,6 +81,20 @@ export function LoginPage({ audience }: { audience: "business" | "member" }) {
             Load demo gym workspace
           </Button>
         ) : null}
+        {isBusiness ? (
+          <div className="rounded-md border bg-muted/40 p-3 text-sm text-muted-foreground">
+            <p className="font-medium text-foreground">Demo credentials</p>
+            <p className="mt-1">Owner: owner@fitgen.demo</p>
+            <p>Trainer: trainer@fitgen.demo</p>
+            <p>Password: fitgen-demo</p>
+          </div>
+        ) : (
+          <div className="rounded-md border bg-muted/40 p-3 text-sm text-muted-foreground">
+            <p className="font-medium text-foreground">Demo member</p>
+            <p className="mt-1">member@fitgen.demo</p>
+            <p>Password: fitgen-demo</p>
+          </div>
+        )}
       </form>
     </AuthLayout>
   );

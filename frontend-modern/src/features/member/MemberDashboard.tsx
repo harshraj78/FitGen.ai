@@ -1,8 +1,10 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import { Activity, Flame, Target, Trophy } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { MetricCard } from "@/components/MetricCard";
 import { DashboardSkeleton } from "@/components/DashboardSection";
+import { Button } from "@/components/ui/button";
 import { useActiveProfileId, useAuth } from "@/hooks/useAuth";
 import { label, money, percent } from "@/lib/utils";
 import { api } from "@/services/api";
@@ -73,11 +75,43 @@ export function MemberDashboard() {
 export function WorkoutPage() {
   const auth = useAuth();
   const profileId = useActiveProfileId(auth.profile);
+  const queryClient = useQueryClient();
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
   const dashboard = useQuery({ queryKey: ["member-dashboard", profileId], queryFn: () => api.memberDashboard(profileId!), enabled: Boolean(profileId) });
   const plan = dashboard.data?.current_workout_plan;
+  const logMutation = useMutation({
+    mutationFn: (exercise: any) =>
+      api.logWorkout(profileId!, {
+        planned_exercise_id: exercise.id,
+        exercise_name: exercise.name,
+        performed_on: new Date().toISOString().slice(0, 10),
+        sets_completed: exercise.sets || 3,
+        reps_completed: 10,
+        weight_kg: exercise.target_weight_kg || 20,
+        completed: true,
+        perceived_effort: 7,
+      }),
+    onSuccess: async () => {
+      setMessage("Workout logged. Progress updated.");
+      setError("");
+      await queryClient.invalidateQueries({ queryKey: ["member-dashboard", profileId] });
+    },
+    onError: (err) => {
+      setMessage("");
+      setError(err instanceof Error ? err.message : "Could not log workout.");
+    },
+  });
+  if (dashboard.isLoading) return <DashboardSkeleton />;
   return (
     <div className="grid gap-6">
-      <h1 className="text-3xl font-semibold tracking-tight">Workout session</h1>
+      <header className="rounded-lg border bg-white p-6 shadow-soft">
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Session</p>
+        <h1 className="mt-2 text-3xl font-semibold tracking-tight">Workout session</h1>
+        <p className="mt-2 text-muted-foreground">Tap a planned movement to record a clean demo set and keep the coaching loop moving.</p>
+      </header>
+      {message ? <p className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{message}</p> : null}
+      {error ? <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p> : null}
       <section className="grid gap-4">
         {(plan?.days || []).map((day: any) => (
           <Card key={day.day}>
@@ -86,12 +120,17 @@ export function WorkoutPage() {
             </CardHeader>
             <CardContent className="grid gap-3">
               {day.exercises?.map((exercise: any) => (
-                <div className="flex items-center justify-between rounded-md border p-3" key={exercise.id || exercise.exercise_name}>
+                <div className="grid gap-3 rounded-md border p-3 md:grid-cols-[1fr_auto]" key={exercise.id || exercise.name}>
                   <div>
                     <p className="font-medium">{exercise.name}</p>
                     <p className="text-sm text-muted-foreground">{exercise.sets} sets | {exercise.target_reps} | {exercise.equipment}</p>
                   </div>
-                  <span className="text-sm text-muted-foreground">{label(exercise.status || "pending")}</span>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm text-muted-foreground">{label(exercise.status || "pending")}</span>
+                    <Button disabled={!profileId || logMutation.isPending || exercise.status === "completed"} onClick={() => logMutation.mutate(exercise)}>
+                      Log done
+                    </Button>
+                  </div>
                 </div>
               ))}
             </CardContent>
