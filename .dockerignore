@@ -1,0 +1,13 @@
+.git
+.env
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+fitgen.db
+fitgen_*_test.db
+*.log
+frontend-modern/node_modules/
+frontend-modern/dist/
+frontend-modern/*.tsbuildinfo

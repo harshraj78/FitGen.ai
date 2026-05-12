@@ -138,7 +138,7 @@ export function PageHeader({ eyebrow, title, subtitle }: { eyebrow: string; titl
   );
 }
 
-export function PageLoading({ label: text }: { label: string }) {
+export function PageLoading({ label: _text }: { label: string }) {
   return <DashboardSkeleton />;
 }
 

@@ -13,6 +13,7 @@ from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
 from app import models, schemas
+from app.config import get_settings
 from app.db import get_db, init_db
 from app.routes.analytics import router as analytics_router
 from app.routes.audit import router as audit_router
@@ -21,7 +22,7 @@ from app.routes.notifications import router as notification_router
 from app.routes.organizations import router as organization_router
 from app.routes.sessions import router as session_router
 from app.routes.trainer_workspace import router as trainer_workspace_router
-from app.services.auth import account_dict, create_session, get_account_from_authorization, hash_password, normalize_email, verify_password
+from app.services.auth import account_dict, create_session, get_account_from_authorization, hash_password, normalize_email, revoke_session, verify_password
 from app.services.demo_seed import DemoSeedService
 from app.services.diet_planner import DietPlanner
 from app.services.llm import LLMService
@@ -32,11 +33,12 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 STATIC_DIR = BASE_DIR / "frontend"
 logger = logging.getLogger("fitgen.api")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+settings = get_settings()
 
 app = FastAPI(title="FitGen AI", version="1.0.0")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.cors_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -160,6 +162,15 @@ def me(account: models.Account = Depends(_require_account), db: Session = Depend
     return {"token": "", "account": account_dict(account), "profile": _user_dict(profile) if profile else None}
 
 
+@app.post("/api/auth/logout")
+def logout(
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+) -> dict:
+    revoke_session(db, authorization)
+    return {"status": "signed_out"}
+
+
 @app.post("/api/users", response_model=schemas.UserProfileOut)
 def create_user(
     payload: schemas.UserProfileCreate,
@@ -186,6 +197,8 @@ def get_user(
 
 @app.get("/api/bootstrap")
 def bootstrap(db: Session = Depends(get_db)) -> dict:
+    if not settings.demo_routes_enabled:
+        raise HTTPException(status_code=404, detail="Demo workspace is disabled")
     user = db.query(models.UserProfile).order_by(models.UserProfile.id).first()
     if not user:
         user = models.UserProfile(
@@ -212,6 +225,8 @@ def bootstrap(db: Session = Depends(get_db)) -> dict:
 
 @app.post("/api/demo/business")
 def business_demo(db: Session = Depends(get_db)) -> dict:
+    if not settings.demo_routes_enabled:
+        raise HTTPException(status_code=404, detail="Demo workspace is disabled")
     return DemoSeedService(db).seed_business_demo()
 
 

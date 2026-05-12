@@ -46,6 +46,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         queryClient.setQueryData(["auth", "me"], response);
       },
       logout() {
+        void api.logout().catch(() => undefined);
         clearSession();
         queryClient.clear();
       },

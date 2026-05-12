@@ -66,6 +66,41 @@ uvicorn app.main:app --reload
 
 Copy `.env.example` to `.env` for local configuration. Keep secrets out of Git.
 
+## Deployment
+
+For a real business-user deployment, run the backend on Render and the modern frontend on Vercel, or use the included Docker setup for a single-host pilot.
+
+Backend production environment:
+
+```bash
+APP_ENV=production
+DATABASE_URL=postgresql+psycopg://...
+AUTO_CREATE_TABLES=false
+ENABLE_DEMO_ROUTES=false
+ALLOWED_ORIGINS=https://your-vercel-app.vercel.app
+SESSION_TTL_HOURS=168
+```
+
+Render can use `render.yaml` as a starting point. After the database is attached, the start command runs:
+
+```bash
+alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT
+```
+
+Vercel should deploy `frontend-modern` with:
+
+```bash
+VITE_API_BASE_URL=https://your-render-api.onrender.com
+```
+
+For local Docker verification:
+
+```bash
+docker compose up --build
+```
+
+Then open `http://127.0.0.1:8080`; the API runs at `http://127.0.0.1:8010`.
+
 ## Database Migrations
 
 FitGen AI uses Alembic for schema versioning:

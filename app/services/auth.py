@@ -4,11 +4,13 @@ import base64
 import hashlib
 import hmac
 import secrets
+from datetime import datetime, timedelta, timezone
 
 from fastapi import Depends, Header, HTTPException
 from sqlalchemy.orm import Session
 
 from app import models
+from app.config import get_settings
 from app.db import get_db
 
 
@@ -58,7 +60,23 @@ def get_account_from_authorization(db: Session, authorization: str | None) -> mo
     session = db.query(models.AccountSession).filter(models.AccountSession.token == token).first()
     if not session:
         raise HTTPException(status_code=401, detail="Invalid or expired session")
+    if _session_expired(session):
+        db.delete(session)
+        db.commit()
+        raise HTTPException(status_code=401, detail="Invalid or expired session")
     return session.account
+
+
+def revoke_session(db: Session, authorization: str | None) -> None:
+    if not authorization:
+        return
+    scheme, _, token = authorization.partition(" ")
+    if scheme.lower() != "bearer" or not token:
+        return
+    session = db.query(models.AccountSession).filter(models.AccountSession.token == token).first()
+    if session:
+        db.delete(session)
+        db.commit()
 
 
 def require_account(
@@ -73,6 +91,14 @@ def require_account(
 
 def account_dict(account: models.Account) -> dict:
     return {"id": account.id, "email": account.email, "created_at": account.created_at.isoformat()}
+
+
+def _session_expired(session: models.AccountSession) -> bool:
+    ttl_hours = max(1, get_settings().session_ttl_hours)
+    created_at = session.created_at
+    if created_at.tzinfo is None:
+        created_at = created_at.replace(tzinfo=timezone.utc)
+    return datetime.now(timezone.utc) - created_at > timedelta(hours=ttl_hours)
 
 
 def _b64(value: bytes) -> str:
