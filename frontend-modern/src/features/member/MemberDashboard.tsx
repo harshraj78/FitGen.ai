@@ -7,6 +7,10 @@ import { useActiveProfileId, useAuth } from "@/hooks/useAuth";
 import { label, money, percent } from "@/lib/utils";
 import { api } from "@/services/api";
 
+function exerciseName(exercise: any) {
+  return exercise.name || exercise.exercise_name || "Exercise";
+}
+
 export function MemberDashboard() {
   const auth = useAuth();
   const profileId = useActiveProfileId(auth.profile);
@@ -48,7 +52,7 @@ export function MemberDashboard() {
                   <span className="text-xs text-muted-foreground">{day.exercises?.length || 0} exercises</span>
                 </div>
                 <p className="mt-2 text-sm text-muted-foreground">
-                  {day.exercises?.slice(0, 3).map((exercise: any) => exercise.exercise_name).join(", ")}
+                  {day.exercises?.slice(0, 3).map(exerciseName).join(", ")}
                 </p>
               </div>
             ))}
@@ -88,7 +92,7 @@ export function WorkoutPage() {
               {day.exercises?.map((exercise: any) => (
                 <div className="flex items-center justify-between rounded-md border p-3" key={exercise.id || exercise.exercise_name}>
                   <div>
-                    <p className="font-medium">{exercise.exercise_name}</p>
+                    <p className="font-medium">{exerciseName(exercise)}</p>
                     <p className="text-sm text-muted-foreground">{exercise.sets} sets | {exercise.target_reps} | {exercise.equipment}</p>
                   </div>
                   <span className="text-sm text-muted-foreground">{label(exercise.status || "pending")}</span>

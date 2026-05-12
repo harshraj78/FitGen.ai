@@ -49,6 +49,36 @@ export function BusinessLayout() {
         </div>
       </aside>
       <main className="lg:pl-72">
+        <header className="sticky top-0 z-20 border-b bg-card/95 px-4 py-3 backdrop-blur lg:hidden">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold">FitGen.ai</p>
+              <p className="text-xs text-muted-foreground">Business workspace</p>
+            </div>
+            <Button className="h-9 px-3 text-sm" variant="secondary" onClick={auth.logout}>
+              <LogOut className="mr-2 h-4 w-4" />
+              Sign out
+            </Button>
+          </div>
+          <nav className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+            {nav.map((item) => (
+              <NavLink
+                key={item.to}
+                end={item.to === "/business"}
+                to={item.to}
+                className={({ isActive }) =>
+                  cn(
+                    "flex min-h-10 items-center justify-center gap-2 rounded-md border px-2 text-sm font-medium text-muted-foreground",
+                    isActive && "bg-muted text-foreground",
+                  )
+                }
+              >
+                <item.icon size={16} />
+                <span className="truncate">{item.label}</span>
+              </NavLink>
+            ))}
+          </nav>
+        </header>
         <div className="mx-auto max-w-7xl px-5 py-6 md:px-8">
           <Outlet />
         </div>

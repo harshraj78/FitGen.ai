@@ -2,6 +2,7 @@ import type { AuthResponse, BusinessDashboard, Dashboard, GymTransformation, Org
 
 const TOKEN_KEY = "fitgen-auth-token";
 const PROFILE_KEY = "fitgen-active-user-id";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, "") || "";
 
 export function getToken() {
   return localStorage.getItem(TOKEN_KEY);
@@ -26,7 +27,7 @@ export function getActiveProfileId() {
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = getToken();
-  const response = await fetch(path, {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
     ...options,
     headers: {
       "Content-Type": "application/json",
@@ -51,6 +52,9 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 export const api = {
   login(payload: { email: string; password: string }) {
     return request<AuthResponse>("/api/auth/login", { method: "POST", body: JSON.stringify(payload) });
+  },
+  logout() {
+    return request<{ status: string }>("/api/auth/logout", { method: "POST" });
   },
   businessDemo() {
     return request<AuthResponse & { organization: any; credentials: Record<string, { email: string; password: string }> }>("/api/demo/business", { method: "POST" });
