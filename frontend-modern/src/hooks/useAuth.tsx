@@ -2,7 +2,7 @@ import type React from "react";
 import { createContext, useContext, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, clearSession, getActiveProfileId, getToken, setActiveProfileId, setToken } from "@/services/api";
-import type { Account, Profile } from "@/services/types";
+import type { Account, BusinessSignupPayload, Profile } from "@/services/types";
 
 type AuthContextValue = {
   account: Account | null;
@@ -10,6 +10,7 @@ type AuthContextValue = {
   isAuthenticated: boolean;
   isLoading: boolean;
   login: (payload: { email: string; password: string }) => Promise<Profile | null>;
+  businessSignup: (payload: BusinessSignupPayload) => Promise<void>;
   startBusinessDemo: () => Promise<void>;
   logout: () => void;
 };
@@ -39,6 +40,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
         queryClient.setQueryData(["auth", "me"], response);
         return response.profile ?? null;
+      },
+      async businessSignup(payload) {
+        const response = await api.businessSignup(payload);
+        queryClient.setQueryData(["auth", "me"], response);
+        queryClient.invalidateQueries({ queryKey: ["organizations"] });
       },
       async startBusinessDemo() {
         const response = await api.businessDemo();
