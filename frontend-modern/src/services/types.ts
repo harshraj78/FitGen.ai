@@ -37,6 +37,21 @@ export type AuthResponse = {
   profile?: Profile | null;
 };
 
+export type AccountSignupPayload = {
+  email: string;
+  password: string;
+  profile: Record<string, unknown>;
+};
+
+export type BusinessSignupPayload = {
+  email: string;
+  password: string;
+  ownerName: string;
+  organizationName: string;
+  phone?: string;
+  location: string;
+};
+
 export type Dashboard = {
   user: Profile;
   current_workout_plan: any | null;

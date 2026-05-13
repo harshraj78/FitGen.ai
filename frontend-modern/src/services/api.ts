@@ -1,4 +1,4 @@
-import type { AuthResponse, BusinessDashboard, Dashboard, GymTransformation, Organization, OrganizationContext } from "./types";
+import type { AccountSignupPayload, AuthResponse, BusinessDashboard, BusinessSignupPayload, Dashboard, GymTransformation, Organization, OrganizationContext } from "./types";
 
 const TOKEN_KEY = "fitgen-auth-token";
 const PROFILE_KEY = "fitgen-active-user-id";
@@ -53,6 +53,50 @@ export const api = {
   login(payload: { email: string; password: string }) {
     return request<AuthResponse>("/api/auth/login", { method: "POST", body: JSON.stringify(payload) });
   },
+  signup(payload: AccountSignupPayload) {
+    return request<AuthResponse>("/api/auth/signup", { method: "POST", body: JSON.stringify(payload) });
+  },
+  createOrganization(payload: { name: string; slug: string; legal_name?: string; timezone?: string; phone?: string; email?: string; address?: string }) {
+    return request<Organization>("/api/organizations", { method: "POST", body: JSON.stringify(payload) });
+  },
+  async businessSignup(payload: BusinessSignupPayload) {
+    const session = await request<AuthResponse>("/api/auth/signup", {
+      method: "POST",
+      body: JSON.stringify({
+        email: payload.email,
+        password: payload.password,
+        profile: {
+          name: payload.ownerName,
+          age: 30,
+          height_cm: 170,
+          weight_kg: 70,
+          fitness_goal: "maintenance",
+          diet_preference: "veg",
+          budget_amount: 250,
+          budget_period: "daily",
+          location: payload.location,
+          gym_type: "local_gym",
+        },
+      }),
+    });
+    setToken(session.token);
+    if (session.profile?.id) {
+      setActiveProfileId(session.profile.id);
+    }
+    const organization = await request<Organization>("/api/organizations", {
+      method: "POST",
+      body: JSON.stringify({
+        name: payload.organizationName,
+        slug: slugify(payload.organizationName),
+        legal_name: payload.organizationName,
+        timezone: "Asia/Kolkata",
+        phone: payload.phone || "",
+        email: payload.email,
+        address: payload.location,
+      }),
+    });
+    return { ...session, organization };
+  },
   logout() {
     return request<{ status: string }>("/api/auth/logout", { method: "POST" });
   },
@@ -84,3 +128,12 @@ export const api = {
     return request<any[]>(`/api/organizations/${organizationId}/trainer/plan-approvals/pending`);
   },
 };
+
+function slugify(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80) || `gym-${Date.now()}`;
+}
