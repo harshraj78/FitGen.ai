@@ -52,6 +52,30 @@ export type BusinessSignupPayload = {
   location: string;
 };
 
+export type MembershipPlanPayload = {
+  name: string;
+  duration_days: number;
+  price_amount: number;
+  currency: string;
+  description?: string;
+};
+
+export type MemberPayload = {
+  name: string;
+  age: number;
+  height_cm: number;
+  weight_kg: number;
+  fitness_goal: string;
+  diet_preference: string;
+  budget_amount: number;
+  budget_period: string;
+  location: string;
+  gym_type: string;
+  member_code?: string;
+  status?: string;
+  joined_on?: string;
+};
+
 export type Dashboard = {
   user: Profile;
   current_workout_plan: any | null;
