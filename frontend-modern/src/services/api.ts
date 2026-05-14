@@ -1,4 +1,16 @@
-import type { AccountSignupPayload, AuthResponse, BusinessDashboard, BusinessSignupPayload, Dashboard, GymTransformation, Organization, OrganizationContext } from "./types";
+import type {
+  AccountSignupPayload,
+  AuthResponse,
+  BusinessDashboard,
+  BusinessSignupPayload,
+  Dashboard,
+  GymTransformation,
+  MemberPayload,
+  MembershipPlanPayload,
+  Organization,
+  OrganizationContext,
+  Profile,
+} from "./types";
 
 const TOKEN_KEY = "fitgen-auth-token";
 const PROFILE_KEY = "fitgen-active-user-id";
@@ -111,6 +123,12 @@ export const api = {
   },
   organization(id: number) {
     return request<OrganizationContext>(`/api/organizations/${id}`);
+  },
+  createMembershipPlan(organizationId: number, payload: MembershipPlanPayload) {
+    return request(`/api/organizations/${organizationId}/membership-plans`, { method: "POST", body: JSON.stringify(payload) });
+  },
+  createMember(organizationId: number, payload: MemberPayload) {
+    return request<Profile>(`/api/organizations/${organizationId}/members`, { method: "POST", body: JSON.stringify(payload) });
   },
   memberDashboard(profileId: number) {
     return request<Dashboard>(`/api/users/${profileId}/dashboard`);
