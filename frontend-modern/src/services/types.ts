@@ -9,6 +9,8 @@ export type Profile = {
   organization_id?: number | null;
   assigned_trainer_id?: number | null;
   name: string;
+  phone?: string;
+  email?: string;
   fitness_goal: string;
   gym_type: string;
   weight_kg: number;
@@ -62,6 +64,8 @@ export type MembershipPlanPayload = {
 
 export type MemberPayload = {
   name: string;
+  phone?: string;
+  email?: string;
   age: number;
   height_cm: number;
   weight_kg: number;

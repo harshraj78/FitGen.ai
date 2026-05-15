@@ -196,6 +196,8 @@ class UserProfile(Base):
     organization_id: Mapped[int | None] = mapped_column(ForeignKey("organizations.id"), nullable=True, index=True)
     assigned_trainer_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"), nullable=True, index=True)
     member_code: Mapped[str] = mapped_column(String(80), default="")
+    phone: Mapped[str] = mapped_column(String(40), default="")
+    email: Mapped[str] = mapped_column(String(255), default="")
     status: Mapped[str] = mapped_column(String(30), default=MemberStatus.active.value, index=True)
     joined_on: Mapped[date | None] = mapped_column(Date, nullable=True)
     name: Mapped[str] = mapped_column(String(120), nullable=False)

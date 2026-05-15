@@ -41,6 +41,8 @@ export function BusinessOnboardingPage() {
   const [memberForm, setMemberForm] = useState({
     name: "",
     member_code: "",
+    phone: "",
+    email: "",
     age: 25,
     height_cm: 170,
     weight_kg: 70,
@@ -65,7 +67,7 @@ export function BusinessOnboardingPage() {
     mutationFn: (payload: MemberPayload) => api.createMember(org.organization!.id, payload),
     onSuccess: async () => {
       setMemberMessage("Member created with a starter workout and diet plan.");
-      setMemberForm((current) => ({ ...current, name: "", member_code: "" }));
+      setMemberForm((current) => ({ ...current, name: "", member_code: "", phone: "", email: "" }));
       await queryClient.invalidateQueries({ queryKey: ["organization", org.organization?.id] });
       await queryClient.invalidateQueries({ queryKey: ["business-dashboard", org.organization?.id] });
     },
@@ -217,6 +219,14 @@ export function BusinessOnboardingPage() {
                   <label className="grid gap-2 text-sm font-medium">
                     Member code
                     <Input value={memberForm.member_code} onChange={(event) => setMemberForm({ ...memberForm, member_code: event.target.value })} placeholder="FG-001" />
+                  </label>
+                  <label className="grid gap-2 text-sm font-medium">
+                    WhatsApp phone
+                    <Input value={memberForm.phone} onChange={(event) => setMemberForm({ ...memberForm, phone: event.target.value })} placeholder="+91 98765 43210" />
+                  </label>
+                  <label className="grid gap-2 text-sm font-medium">
+                    Email
+                    <Input type="email" value={memberForm.email} onChange={(event) => setMemberForm({ ...memberForm, email: event.target.value })} placeholder="member@example.com" />
                   </label>
                   <label className="grid gap-2 text-sm font-medium">
                     Age

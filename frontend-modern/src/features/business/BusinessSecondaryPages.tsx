@@ -117,6 +117,18 @@ export function DailyActionsPage() {
               </div>
               <h3 className="font-semibold">{action.title}</h3>
               <p className="mt-2 text-sm text-muted-foreground">{action.message}</p>
+              {action.metadata?.automation ? (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Badge tone={action.metadata.contact_status === "ready" ? "success" : "warning"}>
+                    {action.metadata.contact_status === "ready" ? "WhatsApp ready" : "Phone needed"}
+                  </Badge>
+                  {action.metadata.payment_link_status ? (
+                    <Badge tone={action.metadata.payment_link_status === "ready" ? "success" : "warning"}>
+                      {action.metadata.payment_link_status === "ready" ? "Payment link ready" : "Payment setup needed"}
+                    </Badge>
+                  ) : null}
+                </div>
+              ) : null}
               <p className="mt-4 text-sm font-medium">{action.member.name}</p>
             </CardContent>
           </Card>

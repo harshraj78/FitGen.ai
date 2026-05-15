@@ -10,6 +10,7 @@ from sqlalchemy import desc, func
 from sqlalchemy.orm import Session
 
 from app import models
+from app.config import get_settings
 from app.services.analytics import AnalyticsService
 from app.services.notifications import NotificationService
 from app.services.tenancy import serialize_goal
@@ -505,10 +506,13 @@ class TrainerPerformanceService:
 
 
 class RetentionAutomationService:
+    RENEWAL_FUNNEL_DAYS = {15, 7, 3}
+
     def __init__(self, db: Session):
         self.db = db
         self.analytics = AnalyticsService(db)
         self.retention = RetentionIntelligenceService(db)
+        self.settings = get_settings()
 
     def daily_actions(self, organization_id: int, *, persist: bool = False, trainer_account_id: int | None = None) -> dict[str, Any]:
         actions: list[dict[str, Any]] = []
@@ -530,7 +534,11 @@ class RetentionAutomationService:
         actions = []
         codes = {signal["code"] for signal in risk["signals"]}
         member_mini = self.analytics.member_mini(member)
-        if "inactivity" in codes or "no_recent_attendance" in codes:
+
+        silent_dropout_action = self._silent_dropout_action(member, member_mini)
+        if silent_dropout_action:
+            actions.append(silent_dropout_action)
+        elif "inactivity" in codes or "no_recent_attendance" in codes:
             actions.append(
                 self._action(
                     member,
@@ -543,13 +551,30 @@ class RetentionAutomationService:
                     {"risk_score": risk["score"]},
                 )
             )
-        if "renewal_window" in codes or "expired_membership" in codes:
+
+        renewal_funnel_action = self._renewal_funnel_action(member, member_mini, risk)
+        if "expired_membership" in codes:
             actions.append(
                 self._action(
                     member,
                     member_mini,
                     models.RetentionWorkflowType.renewal_reminder.value,
-                    "high" if "expired_membership" in codes else "medium",
+                    "high",
+                    "Renewal conversation due",
+                    f"{member.name} is in the renewal window. Confirm plan, payment, and next coaching step.",
+                    date.today(),
+                    {"risk_score": risk["score"], "forecast_renewal_on": str(risk["forecast_renewal_on"])},
+                )
+            )
+        elif renewal_funnel_action:
+            actions.append(renewal_funnel_action)
+        elif "renewal_window" in codes:
+            actions.append(
+                self._action(
+                    member,
+                    member_mini,
+                    models.RetentionWorkflowType.renewal_reminder.value,
+                    "medium",
                     "Renewal conversation due",
                     f"{member.name} is in the renewal window. Confirm plan, payment, and next coaching step.",
                     date.today(),
@@ -597,6 +622,110 @@ class RetentionAutomationService:
             )
         return actions
 
+    def _silent_dropout_action(self, member: models.UserProfile, member_mini: dict[str, Any]) -> dict[str, Any] | None:
+        if member.status != models.MemberStatus.active.value or member.organization_id is None:
+            return None
+        today = date.today()
+        last_access = self._last_access_checkin(member)
+        baseline = member.joined_on or member.created_at.date()
+        last_seen_on = last_access.checked_in_at.date() if last_access else None
+        absent_since = last_seen_on or baseline
+        absent_days = (today - absent_since).days
+        if absent_days < 7:
+            return None
+        contact_status = "ready" if member.phone else "member_phone_missing"
+        metadata = {
+            "automation": "silent_dropout",
+            "market": "IN",
+            "absent_days": absent_days,
+            "last_access_on": str(last_seen_on) if last_seen_on else None,
+            "access_methods": [models.AttendanceMethod.qr.value, models.AttendanceMethod.biometric.value],
+            "recommended_channels": [models.NotificationChannel.whatsapp.value, models.NotificationChannel.in_app.value],
+            "whatsapp_template": "silent_dropout_nudge_v1",
+            "contact_status": contact_status,
+            "recipient_phone_present": bool(member.phone),
+            "booking_link": self._booking_link(member),
+        }
+        return self._action(
+            member,
+            member_mini,
+            models.RetentionWorkflowType.inactive_member_alert.value,
+            "high",
+            "Silent dropout alarm",
+            f"{member.name} has no QR or biometric access scan for {absent_days} days. Send a WhatsApp nudge or call today.",
+            today,
+            metadata,
+            source_entity_type="attendance_gap",
+            source_entity_id=member.id,
+        )
+
+    def _renewal_funnel_action(self, member: models.UserProfile, member_mini: dict[str, Any], risk: dict[str, Any]) -> dict[str, Any] | None:
+        membership = self._latest_active_membership(member)
+        if membership is None:
+            return None
+        today = date.today()
+        days_remaining = (membership.ends_on - today).days
+        if days_remaining not in self.RENEWAL_FUNNEL_DAYS:
+            return None
+        amount = float(membership.plan.price_amount) if membership.plan else 0.0
+        payment_link = self._payment_link(member, membership)
+        payment_link_status = "ready" if payment_link else "provider_not_configured"
+        metadata = {
+            "automation": "renewal_funnel",
+            "market": "IN",
+            "days_to_expiry": days_remaining,
+            "membership_id": membership.id,
+            "plan_id": membership.plan_id,
+            "plan_name": membership.plan.name if membership.plan else None,
+            "amount": amount,
+            "currency": membership.plan.currency if membership.plan else "INR",
+            "payment_methods": ["upi", "card", "netbanking"],
+            "payment_link": payment_link,
+            "payment_link_status": payment_link_status,
+            "recommended_channels": [models.NotificationChannel.whatsapp.value, models.NotificationChannel.in_app.value],
+            "whatsapp_template": f"renewal_{days_remaining}_day_payment_link_v1",
+            "contact_status": "ready" if member.phone else "member_phone_missing",
+            "risk_score": risk["score"],
+        }
+        priority = "high" if days_remaining == 3 else "medium"
+        return self._action(
+            member,
+            member_mini,
+            models.RetentionWorkflowType.renewal_reminder.value,
+            priority,
+            f"Renewal funnel: {days_remaining}-day payment link",
+            f"{member.name}'s membership expires in {days_remaining} days. Send the renewal payment link over WhatsApp and confirm UPI/card/netbanking payment.",
+            today,
+            metadata,
+            source_entity_type="member_membership",
+            source_entity_id=membership.id,
+        )
+
+    def _last_access_checkin(self, member: models.UserProfile) -> models.AttendanceCheckin | None:
+        return (
+            self.db.query(models.AttendanceCheckin)
+            .filter(
+                models.AttendanceCheckin.organization_id == member.organization_id,
+                models.AttendanceCheckin.member_id == member.id,
+                models.AttendanceCheckin.method.in_([models.AttendanceMethod.qr.value, models.AttendanceMethod.biometric.value]),
+            )
+            .order_by(desc(models.AttendanceCheckin.checked_in_at), desc(models.AttendanceCheckin.id))
+            .first()
+        )
+
+    def _latest_active_membership(self, member: models.UserProfile) -> models.MemberMembership | None:
+        return (
+            self.db.query(models.MemberMembership)
+            .filter(
+                models.MemberMembership.organization_id == member.organization_id,
+                models.MemberMembership.member_id == member.id,
+                models.MemberMembership.status == models.MembershipStatus.active.value,
+                models.MemberMembership.ends_on >= date.today(),
+            )
+            .order_by(desc(models.MemberMembership.ends_on), desc(models.MemberMembership.id))
+            .first()
+        )
+
     def _pending_approval_actions(self, organization_id: int, *, trainer_account_id: int | None = None) -> list[dict[str, Any]]:
         query = self.db.query(models.WorkoutPlan).join(models.UserProfile, models.UserProfile.id == models.WorkoutPlan.user_id).filter(
             models.WorkoutPlan.organization_id == organization_id,
@@ -639,7 +768,7 @@ class RetentionAutomationService:
             "id": None,
             "organization_id": member.organization_id,
             "member": member_mini,
-            "assigned_account_id": member.assigned_trainer_id,
+            "assigned_account_id": member.assigned_trainer_id or self._default_assignee_id(member.organization_id),
             "workflow_type": workflow_type,
             "status": models.RetentionWorkflowStatus.open.value,
             "priority": priority,
@@ -668,6 +797,8 @@ class RetentionAutomationService:
             workflow.priority = action["priority"]
             workflow.message = action["message"]
             workflow.due_on = action["due_on"]
+            workflow.source_entity_type = action["source_entity_type"]
+            workflow.source_entity_id = action["source_entity_id"]
             workflow.metadata_json = json.dumps(action["metadata"], sort_keys=True)
         else:
             workflow = models.RetentionWorkflow(
@@ -690,8 +821,6 @@ class RetentionAutomationService:
         return self._serialize_workflow(workflow)
 
     def _emit_notification(self, workflow: models.RetentionWorkflow) -> None:
-        if workflow.assigned_account_id is None:
-            return
         event_type = {
             models.RetentionWorkflowType.inactive_member_alert.value: models.NotificationEventType.inactive_member.value,
             models.RetentionWorkflowType.trainer_follow_up_reminder.value: models.NotificationEventType.trainer_follow_up_due.value,
@@ -700,6 +829,15 @@ class RetentionAutomationService:
             models.RetentionWorkflowType.stalled_progress_alert.value: models.NotificationEventType.stalled_progress.value,
             models.RetentionWorkflowType.high_churn_risk.value: models.NotificationEventType.renewal_risk_detected.value,
         }.get(workflow.workflow_type, models.NotificationEventType.trainer_follow_up_due.value)
+        metadata = json.loads(workflow.metadata_json or "{}")
+        requested_channels = set(metadata.get("recommended_channels") or [])
+        channels: list[str] = []
+        if workflow.assigned_account_id is not None:
+            channels.append(models.NotificationChannel.in_app.value)
+        if models.NotificationChannel.whatsapp.value in requested_channels:
+            channels.append(models.NotificationChannel.whatsapp.value)
+        if not channels:
+            return
         NotificationService(self.db).emit(
             event_type,
             workflow.title,
@@ -709,8 +847,34 @@ class RetentionAutomationService:
             recipient_user_id=workflow.member_id,
             entity_type="retention_workflow",
             entity_id=workflow.id,
-            payload={"workflow_type": workflow.workflow_type, "priority": workflow.priority},
+            payload={"workflow_type": workflow.workflow_type, "priority": workflow.priority, **metadata},
+            channels=channels,
         )
+
+    def _default_assignee_id(self, organization_id: int | None) -> int | None:
+        if organization_id is None:
+            return None
+        membership = (
+            self.db.query(models.OrganizationMembership)
+            .filter(
+                models.OrganizationMembership.organization_id == organization_id,
+                models.OrganizationMembership.active.is_(True),
+                models.OrganizationMembership.role.in_([models.OrganizationRole.gym_owner.value, models.OrganizationRole.admin.value]),
+            )
+            .order_by(models.OrganizationMembership.role.desc(), models.OrganizationMembership.id)
+            .first()
+        )
+        return membership.account_id if membership else None
+
+    def _booking_link(self, member: models.UserProfile) -> str | None:
+        if not self.settings.booking_base_url:
+            return None
+        return f"{self.settings.booking_base_url.rstrip('/')}/organizations/{member.organization_id}/members/{member.id}"
+
+    def _payment_link(self, member: models.UserProfile, membership: models.MemberMembership) -> str | None:
+        if not self.settings.payment_links_enabled or not self.settings.payment_link_base_url:
+            return None
+        return f"{self.settings.payment_link_base_url.rstrip('/')}/organizations/{member.organization_id}/members/{member.id}/memberships/{membership.id}"
 
     def _serialize_workflow(self, workflow: models.RetentionWorkflow) -> dict[str, Any]:
         return {

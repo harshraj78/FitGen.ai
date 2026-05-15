@@ -26,6 +26,7 @@ class NotificationService:
         entity_type: str,
         entity_id: int | None,
         payload: dict[str, Any] | None = None,
+        channels: list[str] | None = None,
     ) -> models.Notification:
         event = models.NotificationEvent(
             organization_id=organization_id,
@@ -36,18 +37,22 @@ class NotificationService:
         )
         self.db.add(event)
         self.db.flush()
-        notification = models.Notification(
-            organization_id=organization_id,
-            event_id=event.id,
-            recipient_account_id=recipient_account_id,
-            recipient_user_id=recipient_user_id,
-            event_type=event_type,
-            channel=models.NotificationChannel.in_app.value,
-            title=title,
-            message=message,
-        )
-        self.db.add(notification)
-        return notification
+        requested_channels = channels or [models.NotificationChannel.in_app.value]
+        notifications: list[models.Notification] = []
+        for channel in requested_channels:
+            notification = models.Notification(
+                organization_id=organization_id,
+                event_id=event.id,
+                recipient_account_id=recipient_account_id,
+                recipient_user_id=recipient_user_id,
+                event_type=event_type,
+                channel=channel,
+                title=title,
+                message=message,
+            )
+            self.db.add(notification)
+            notifications.append(notification)
+        return notifications[0]
 
     def list_for_account(
         self,
