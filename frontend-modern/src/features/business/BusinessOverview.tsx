@@ -74,13 +74,13 @@ export function BusinessOverview() {
       <section className="grid gap-6 xl:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>Trainer performance</CardTitle>
+          <CardTitle>Owner and staff performance</CardTitle>
           </CardHeader>
           <CardContent className="scroll-table">
             <table className="w-full text-left text-sm">
               <thead className="text-muted-foreground">
                 <tr>
-                  <th className="py-2">Trainer</th>
+                  <th className="py-2">Owner / staff</th>
                   <th>Clients</th>
                   <th>Retention</th>
                   <th>Adherence</th>

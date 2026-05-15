@@ -65,13 +65,13 @@ export function TrainerPerformancePage() {
   if (!dashboard.data) return <EmptyState title="Trainer data unavailable" detail={dashboard.error?.message || "No trainer data found."} />;
   return (
     <div className="grid gap-6">
-      <PageHeader eyebrow="Trainer performance" title="Compare coaching effectiveness" subtitle="Retention, adherence, approvals, and risk load by trainer." />
+      <PageHeader eyebrow="Owner and staff performance" title="Compare coaching effectiveness" subtitle="Retention, adherence, approvals, and risk load for the owner or staff team." />
       <Card>
         <CardContent className="scroll-table pt-5">
           <table className="w-full text-left text-sm">
             <thead className="text-muted-foreground">
               <tr>
-                <th className="py-2">Trainer</th>
+                <th className="py-2">Owner / staff</th>
                 <th>Active clients</th>
                 <th>Retention</th>
                 <th>Adherence</th>

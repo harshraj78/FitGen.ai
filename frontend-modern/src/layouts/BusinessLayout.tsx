@@ -1,5 +1,5 @@
 import { Activity, BarChart3, CalendarCheck, ClipboardCheck, LogOut, Target, Users } from "lucide-react";
-import { NavLink, Outlet } from "react-router-dom";
+import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
@@ -8,19 +8,24 @@ const nav = [
   { to: "/business", label: "Overview", icon: BarChart3 },
   { to: "/business/onboarding", label: "Setup", icon: ClipboardCheck },
   { to: "/business/retention", label: "Retention", icon: Activity },
-  { to: "/business/trainers", label: "Trainers", icon: Users },
+  { to: "/business/trainers", label: "Staff", icon: Users },
   { to: "/business/actions", label: "Daily actions", icon: CalendarCheck },
   { to: "/business/transformation", label: "Transformation", icon: Target },
 ];
 
 export function BusinessLayout() {
   const auth = useAuth();
+  const navigate = useNavigate();
+  function signOut() {
+    auth.logout();
+    navigate("/business/login", { replace: true });
+  }
   return (
     <div className="min-h-screen bg-[#f7f7f5]">
       <aside className="fixed inset-y-0 left-0 hidden w-72 border-r bg-card px-4 py-5 lg:block">
         <div className="mb-8 px-2">
           <p className="text-sm font-semibold">FitGen.ai</p>
-          <p className="text-xs text-muted-foreground">Gym operating infrastructure</p>
+          <p className="text-xs text-muted-foreground">Owner-led gym operations</p>
         </div>
         <nav className="grid gap-1">
           {nav.map((item) => (
@@ -42,7 +47,7 @@ export function BusinessLayout() {
         </nav>
         <div className="absolute inset-x-4 bottom-5 rounded-lg border bg-muted/40 p-3">
           <p className="truncate text-sm font-medium">{auth.account?.email}</p>
-          <Button className="mt-3 w-full" variant="secondary" onClick={auth.logout}>
+          <Button className="mt-3 w-full" variant="secondary" onClick={signOut}>
             <LogOut className="mr-2 h-4 w-4" />
             Sign out
           </Button>
@@ -55,7 +60,7 @@ export function BusinessLayout() {
               <p className="text-sm font-semibold">FitGen.ai</p>
               <p className="text-xs text-muted-foreground">Business workspace</p>
             </div>
-            <Button className="h-9 px-3 text-sm" variant="secondary" onClick={auth.logout}>
+            <Button className="h-9 px-3 text-sm" variant="secondary" onClick={signOut}>
               <LogOut className="mr-2 h-4 w-4" />
               Sign out
             </Button>

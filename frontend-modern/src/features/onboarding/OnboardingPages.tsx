@@ -10,10 +10,10 @@ import { api } from "@/services/api";
 import type { MemberPayload, MembershipPlanPayload } from "@/services/types";
 
 const trainerSteps = [
-  "Complete trainer profile",
-  "Review assigned clients",
-  "Clear AI-generated plan approvals",
-  "Open today's follow-up queue",
+  "Use owner-as-trainer by default",
+  "Add staff only if the gym actually has trainers",
+  "Review member follow-ups from the daily action queue",
+  "Assign clients later when the gym team grows",
 ];
 
 const memberSteps = [
@@ -121,8 +121,8 @@ export function BusinessOnboardingPage() {
       done: memberMutation.isSuccess || Number(org.summary?.active_members || 0) > 0,
     },
     {
-      title: "Invite trainers",
-      detail: "Bring coaching staff into the trainer workspace and assign client ownership.",
+      title: "Owner-as-trainer or optional staff",
+      detail: "Most Indian gyms can run with the owner as trainer. Add staff only when the gym has a separate trainer team.",
       done: false,
     },
   ];
@@ -295,7 +295,7 @@ export function TrainerOnboardingPage() {
     <RoleOnboarding
       eyebrow="Trainer setup"
       title="Start with assigned clients and plan approvals"
-      subtitle="Trainers should land with clear work: who needs attention, which AI plans need review, and which clients are slipping."
+      subtitle="For many Indian gyms, the owner handles coaching too. Use this workspace for owner-led follow-ups first, then add staff when needed."
       icon={Users}
       steps={trainerSteps}
       cta="/business/actions"
