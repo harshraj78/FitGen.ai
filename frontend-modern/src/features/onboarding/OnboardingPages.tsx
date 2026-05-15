@@ -10,10 +10,10 @@ import { api } from "@/services/api";
 import type { MemberPayload, MembershipPlanPayload } from "@/services/types";
 
 const trainerSteps = [
-  "Complete trainer profile",
-  "Review assigned clients",
-  "Clear AI-generated plan approvals",
-  "Open today's follow-up queue",
+  "Use owner-as-trainer by default",
+  "Add staff only if the gym actually has trainers",
+  "Review member follow-ups from the daily action queue",
+  "Assign clients later when the gym team grows",
 ];
 
 const memberSteps = [
@@ -41,6 +41,8 @@ export function BusinessOnboardingPage() {
   const [memberForm, setMemberForm] = useState({
     name: "",
     member_code: "",
+    phone: "",
+    email: "",
     age: 25,
     height_cm: 170,
     weight_kg: 70,
@@ -65,7 +67,7 @@ export function BusinessOnboardingPage() {
     mutationFn: (payload: MemberPayload) => api.createMember(org.organization!.id, payload),
     onSuccess: async () => {
       setMemberMessage("Member created with a starter workout and diet plan.");
-      setMemberForm((current) => ({ ...current, name: "", member_code: "" }));
+      setMemberForm((current) => ({ ...current, name: "", member_code: "", phone: "", email: "" }));
       await queryClient.invalidateQueries({ queryKey: ["organization", org.organization?.id] });
       await queryClient.invalidateQueries({ queryKey: ["business-dashboard", org.organization?.id] });
     },
@@ -121,8 +123,8 @@ export function BusinessOnboardingPage() {
       done: memberMutation.isSuccess || Number(org.summary?.active_members || 0) > 0,
     },
     {
-      title: "Invite trainers",
-      detail: "Bring coaching staff into the trainer workspace and assign client ownership.",
+      title: "Owner-as-trainer or optional staff",
+      detail: "Most Indian gyms can run with the owner as trainer. Add staff only when the gym has a separate trainer team.",
       done: false,
     },
   ];
@@ -219,6 +221,14 @@ export function BusinessOnboardingPage() {
                     <Input value={memberForm.member_code} onChange={(event) => setMemberForm({ ...memberForm, member_code: event.target.value })} placeholder="FG-001" />
                   </label>
                   <label className="grid gap-2 text-sm font-medium">
+                    WhatsApp phone
+                    <Input value={memberForm.phone} onChange={(event) => setMemberForm({ ...memberForm, phone: event.target.value })} placeholder="+91 98765 43210" />
+                  </label>
+                  <label className="grid gap-2 text-sm font-medium">
+                    Email
+                    <Input type="email" value={memberForm.email} onChange={(event) => setMemberForm({ ...memberForm, email: event.target.value })} placeholder="member@example.com" />
+                  </label>
+                  <label className="grid gap-2 text-sm font-medium">
                     Age
                     <Input type="number" min={13} max={90} value={memberForm.age} onChange={(event) => setMemberForm({ ...memberForm, age: Number(event.target.value) })} required />
                   </label>
@@ -295,7 +305,7 @@ export function TrainerOnboardingPage() {
     <RoleOnboarding
       eyebrow="Trainer setup"
       title="Start with assigned clients and plan approvals"
-      subtitle="Trainers should land with clear work: who needs attention, which AI plans need review, and which clients are slipping."
+      subtitle="For many Indian gyms, the owner handles coaching too. Use this workspace for owner-led follow-ups first, then add staff when needed."
       icon={Users}
       steps={trainerSteps}
       cta="/business/actions"

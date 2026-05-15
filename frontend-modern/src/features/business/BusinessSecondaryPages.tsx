@@ -65,13 +65,13 @@ export function TrainerPerformancePage() {
   if (!dashboard.data) return <EmptyState title="Trainer data unavailable" detail={dashboard.error?.message || "No trainer data found."} />;
   return (
     <div className="grid gap-6">
-      <PageHeader eyebrow="Trainer performance" title="Compare coaching effectiveness" subtitle="Retention, adherence, approvals, and risk load by trainer." />
+      <PageHeader eyebrow="Owner and staff performance" title="Compare coaching effectiveness" subtitle="Retention, adherence, approvals, and risk load for the owner or staff team." />
       <Card>
         <CardContent className="scroll-table pt-5">
           <table className="w-full text-left text-sm">
             <thead className="text-muted-foreground">
               <tr>
-                <th className="py-2">Trainer</th>
+                <th className="py-2">Owner / staff</th>
                 <th>Active clients</th>
                 <th>Retention</th>
                 <th>Adherence</th>
@@ -117,6 +117,18 @@ export function DailyActionsPage() {
               </div>
               <h3 className="font-semibold">{action.title}</h3>
               <p className="mt-2 text-sm text-muted-foreground">{action.message}</p>
+              {action.metadata?.automation ? (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Badge tone={action.metadata.contact_status === "ready" ? "success" : "warning"}>
+                    {action.metadata.contact_status === "ready" ? "WhatsApp ready" : "Phone needed"}
+                  </Badge>
+                  {action.metadata.payment_link_status ? (
+                    <Badge tone={action.metadata.payment_link_status === "ready" ? "success" : "warning"}>
+                      {action.metadata.payment_link_status === "ready" ? "Payment link ready" : "Payment setup needed"}
+                    </Badge>
+                  ) : null}
+                </div>
+              ) : null}
               <p className="mt-4 text-sm font-medium">{action.member.name}</p>
             </CardContent>
           </Card>

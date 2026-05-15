@@ -1,5 +1,5 @@
 import { ClipboardCheck, Dumbbell, Home, LogOut, Target, TrendingUp } from "lucide-react";
-import { NavLink, Outlet } from "react-router-dom";
+import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
@@ -14,6 +14,11 @@ const nav = [
 
 export function MemberLayout() {
   const auth = useAuth();
+  const navigate = useNavigate();
+  function signOut() {
+    auth.logout();
+    navigate("/app/login", { replace: true });
+  }
   return (
     <div className="member-surface min-h-screen pb-24">
       <header className="sticky top-0 z-20 border-b bg-white/86 backdrop-blur">
@@ -22,7 +27,7 @@ export function MemberLayout() {
             <p className="text-sm font-semibold">FitGen.ai</p>
             <p className="text-xs text-muted-foreground">{auth.profile?.name || "Member"}</p>
           </div>
-          <Button variant="secondary" onClick={auth.logout}>
+          <Button variant="secondary" onClick={signOut}>
             <LogOut className="mr-2 h-4 w-4" />
             Sign out
           </Button>

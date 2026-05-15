@@ -1,5 +1,5 @@
 import type React from "react";
-import { createContext, useContext, useMemo } from "react";
+import { createContext, useContext, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, clearSession, getActiveProfileId, getToken, setActiveProfileId, setToken } from "@/services/api";
 import type { Account, BusinessSignupPayload, Profile } from "@/services/types";
@@ -19,8 +19,9 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const queryClient = useQueryClient();
+  const [sessionVersion, setSessionVersion] = useState(0);
   const session = useQuery({
-    queryKey: ["auth", "me"],
+    queryKey: ["auth", "me", sessionVersion],
     queryFn: api.me,
     enabled: Boolean(getToken()),
     retry: false,
@@ -38,26 +39,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (response.profile?.id) {
           setActiveProfileId(response.profile.id);
         }
-        queryClient.setQueryData(["auth", "me"], response);
+        setSessionVersion((version) => version + 1);
+        queryClient.setQueryData(["auth", "me", sessionVersion + 1], response);
         return response.profile ?? null;
       },
       async businessSignup(payload) {
         const response = await api.businessSignup(payload);
-        queryClient.setQueryData(["auth", "me"], response);
+        setSessionVersion((version) => version + 1);
+        queryClient.setQueryData(["auth", "me", sessionVersion + 1], response);
         queryClient.invalidateQueries({ queryKey: ["organizations"] });
       },
       async startBusinessDemo() {
         const response = await api.businessDemo();
         setToken(response.token);
-        queryClient.setQueryData(["auth", "me"], response);
+        setSessionVersion((version) => version + 1);
+        queryClient.setQueryData(["auth", "me", sessionVersion + 1], response);
       },
       logout() {
         void api.logout().catch(() => undefined);
         clearSession();
         queryClient.clear();
+        setSessionVersion((version) => version + 1);
       },
     }),
-    [queryClient, session.data, session.isLoading],
+    [queryClient, session.data, session.isLoading, sessionVersion],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

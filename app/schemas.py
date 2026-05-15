@@ -25,6 +25,8 @@ class Page(BaseModel, Generic[T]):
 
 class UserProfileCreate(BaseModel):
     name: str
+    phone: str = Field(default="", max_length=40)
+    email: str = Field(default="", max_length=255)
     age: int = Field(ge=13, le=90)
     height_cm: float = Field(gt=100, lt=230)
     weight_kg: float = Field(gt=30, lt=250)
@@ -311,6 +313,8 @@ class MemberMiniOut(BaseModel):
     organization_id: int | None = None
     assigned_trainer_id: int | None = None
     member_code: str
+    phone: str = ""
+    email: str = ""
     status: str
     name: str
     age: int
