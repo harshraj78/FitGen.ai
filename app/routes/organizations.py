@@ -260,7 +260,8 @@ def invite_member(
     token = create_invite_token()
     member.invite_token_hash = hash_invite_token(token)
     member.invited_at = datetime.utcnow()
-    frontend_url = get_settings().frontend_app_url or str(request.base_url).rstrip("/")
+    settings = get_settings()
+    frontend_url = _invite_frontend_url(settings, request)
     invite_url = f"{frontend_url.rstrip('/')}/app/invite/{token}"
     channels = [models.NotificationChannel.in_app.value]
     if member.phone:
@@ -285,6 +286,19 @@ def invite_member(
         "status": "prepared",
         "channel": "whatsapp" if member.phone else "manual",
     }
+
+
+def _invite_frontend_url(settings, request: Request) -> str:
+    if settings.frontend_app_url:
+        return settings.frontend_app_url.rstrip("/")
+    request_origin = str(request.base_url).rstrip("/")
+    for origin in settings.cors_origins:
+        normalized = origin.rstrip("/")
+        if "localhost" in normalized or "127.0.0.1" in normalized:
+            continue
+        if normalized != request_origin:
+            return normalized
+    return request_origin
 
 
 @router.patch("/{organization_id}/members/{member_id}/trainer", response_model=schemas.UserProfileOut)
