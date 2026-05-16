@@ -66,6 +66,33 @@ export type MembershipPlanPayload = {
   description?: string;
 };
 
+export type MembershipPlan = MembershipPlanPayload & {
+  id: number;
+  organization_id: number;
+  active: boolean;
+  created_at: string;
+};
+
+export type MemberMembershipPayload = {
+  plan_id?: number | null;
+  starts_on: string;
+  ends_on: string;
+  status?: string;
+  notes?: string;
+};
+
+export type PaymentPayload = {
+  membership_id?: number | null;
+  amount: number;
+  currency: string;
+  status: string;
+  due_on?: string | null;
+  paid_on?: string | null;
+  method?: string;
+  reference?: string;
+  notes?: string;
+};
+
 export type MemberPayload = {
   name: string;
   phone?: string;

@@ -363,6 +363,21 @@ def assign_trainer(
     return member
 
 
+@router.get("/{organization_id}/membership-plans", response_model=list[schemas.MembershipPlanOut])
+def list_membership_plans(
+    organization_id: int,
+    db: Session = Depends(get_db),
+    account: models.Account = Depends(require_account),
+) -> list[models.MembershipPlan]:
+    require_org_membership(db, organization_id, account, COACH_ROLES)
+    return (
+        db.query(models.MembershipPlan)
+        .filter(models.MembershipPlan.organization_id == organization_id, models.MembershipPlan.active.is_(True))
+        .order_by(models.MembershipPlan.duration_days, models.MembershipPlan.price_amount)
+        .all()
+    )
+
+
 @router.post("/{organization_id}/membership-plans", response_model=schemas.MembershipPlanOut)
 def create_membership_plan(
     organization_id: int,

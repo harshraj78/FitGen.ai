@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Copy, UserPlus } from "lucide-react";
+import { Copy, MessageCircle, Upload, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { usePrimaryOrganization } from "@/hooks/useOrganization";
 import { label, money, percent } from "@/lib/utils";
 import { api } from "@/services/api";
@@ -139,6 +140,10 @@ export function DailyActionsPage() {
                 </div>
               ) : null}
               <p className="mt-4 text-sm font-medium">{action.member.name}</p>
+              <Button className="mt-4 w-full" type="button" variant="secondary" onClick={() => navigator.clipboard?.writeText(whatsappMessage(action))}>
+                <MessageCircle className="mr-2 h-4 w-4" />
+                Copy WhatsApp text
+              </Button>
               {action.id ? (
                 <div className="mt-4 grid grid-cols-2 gap-2">
                   <Button className="h-9 px-3" type="button" onClick={() => updateAction.mutate({ workflowId: action.id, status: "completed" })}>
@@ -162,6 +167,22 @@ export function MembersPage() {
   const queryClient = useQueryClient();
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [inviteUrl, setInviteUrl] = useState("");
+  const [attendanceText, setAttendanceText] = useState("");
+  const [attendanceMessage, setAttendanceMessage] = useState("");
+  const [renewalForm, setRenewalForm] = useState({
+    plan_id: "",
+    starts_on: new Date().toISOString().slice(0, 10),
+    ends_on: nextDate(30),
+    notes: "Renewed from business workspace",
+  });
+  const [paymentForm, setPaymentForm] = useState({
+    amount: 2500,
+    currency: "INR",
+    status: "paid",
+    method: "upi",
+    reference: "",
+    notes: "",
+  });
   const members = useQuery({
     queryKey: ["members", org.organization?.id],
     queryFn: () => api.members(org.organization!.id),
@@ -171,6 +192,11 @@ export function MembersPage() {
     queryKey: ["member-detail", org.organization?.id, selectedId],
     queryFn: () => api.memberDetail(org.organization!.id, selectedId!),
     enabled: Boolean(org.organization?.id && selectedId),
+  });
+  const plans = useQuery({
+    queryKey: ["membership-plans", org.organization?.id],
+    queryFn: () => api.membershipPlans(org.organization!.id),
+    enabled: Boolean(org.organization?.id),
   });
   const invite = useMutation({
     mutationFn: (memberId: number) => api.inviteMember(org.organization!.id, memberId),
@@ -193,6 +219,46 @@ export function MembersPage() {
       await queryClient.invalidateQueries({ queryKey: ["member-detail", org.organization?.id, selectedId] });
     },
   });
+  const importAttendance = useMutation({
+    mutationFn: () => api.importAttendance(org.organization!.id, parseAttendanceRows(attendanceText)),
+    onSuccess: async (result) => {
+      setAttendanceMessage(`${result.created} check-ins imported, ${result.skipped} skipped${result.errors.length ? `: ${result.errors.slice(0, 3).join("; ")}` : "."}`);
+      await queryClient.invalidateQueries({ queryKey: ["business-dashboard", org.organization?.id] });
+      await queryClient.invalidateQueries({ queryKey: ["member-detail", org.organization?.id, selectedId] });
+    },
+    onError: (error) => setAttendanceMessage(error instanceof Error ? error.message : "Could not import attendance."),
+  });
+  const createMembership = useMutation({
+    mutationFn: () =>
+      api.createMembership(org.organization!.id, selectedId!, {
+        plan_id: renewalForm.plan_id ? Number(renewalForm.plan_id) : null,
+        starts_on: renewalForm.starts_on,
+        ends_on: renewalForm.ends_on,
+        status: "active",
+        notes: renewalForm.notes,
+      }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["member-detail", org.organization?.id, selectedId] });
+      await queryClient.invalidateQueries({ queryKey: ["business-dashboard", org.organization?.id] });
+    },
+  });
+  const recordPayment = useMutation({
+    mutationFn: () =>
+      api.recordPayment(org.organization!.id, selectedId!, {
+        amount: Number(paymentForm.amount),
+        currency: paymentForm.currency,
+        status: paymentForm.status,
+        paid_on: paymentForm.status === "paid" ? new Date().toISOString().slice(0, 10) : null,
+        due_on: new Date().toISOString().slice(0, 10),
+        method: paymentForm.method,
+        reference: paymentForm.reference,
+        notes: paymentForm.notes,
+      }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["member-detail", org.organization?.id, selectedId] });
+      await queryClient.invalidateQueries({ queryKey: ["business-dashboard", org.organization?.id] });
+    },
+  });
 
   if (org.isLoading || members.isLoading) return <PageLoading label="Loading members..." />;
   if (!members.data) return <EmptyState title="Members unavailable" detail={members.error?.message || "No member data found."} />;
@@ -211,6 +277,25 @@ export function MembersPage() {
           </CardContent>
         </Card>
       ) : null}
+      <Card>
+        <CardHeader>
+          <CardTitle>Attendance import</CardTitle>
+          <span className="text-sm text-muted-foreground">Paste QR/biometric rows as member code, optional ISO time, optional method.</span>
+        </CardHeader>
+        <CardContent className="grid gap-3">
+          <textarea
+            className="min-h-24 rounded-md border bg-card px-3 py-2 text-sm outline-none ring-primary/20 transition focus:ring-4"
+            value={attendanceText}
+            onChange={(event) => setAttendanceText(event.target.value)}
+            placeholder={"FG-001,2026-05-16T08:30:00,qr\nFG-002,2026-05-16T09:10:00,biometric"}
+          />
+          {attendanceMessage ? <p className="rounded-md border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">{attendanceMessage}</p> : null}
+          <Button className="w-fit" disabled={importAttendance.isPending || !attendanceText.trim()} type="button" onClick={() => importAttendance.mutate()}>
+            <Upload className="mr-2 h-4 w-4" />
+            Import attendance
+          </Button>
+        </CardContent>
+      </Card>
       <section className="grid gap-6 xl:grid-cols-[1fr_0.9fr]">
         <Card>
           <CardHeader>
@@ -275,13 +360,52 @@ export function MembersPage() {
                     {current.latest_membership ? `${current.latest_membership.status} until ${current.latest_membership.ends_on}` : "No membership recorded"}
                   </p>
                 </div>
+                <div className="grid gap-3 rounded-md border p-3">
+                  <p className="font-medium">Renew membership</p>
+                  <select className="h-10 rounded-md border bg-card px-3 text-sm outline-none ring-primary/20 transition focus:ring-4" value={renewalForm.plan_id} onChange={(event) => setRenewalForm({ ...renewalForm, plan_id: event.target.value })}>
+                    <option value="">No plan selected</option>
+                    {(plans.data || []).map((plan) => (
+                      <option value={plan.id} key={plan.id}>{plan.name} - {money(plan.price_amount)}</option>
+                    ))}
+                  </select>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <Input type="date" value={renewalForm.starts_on} onChange={(event) => setRenewalForm({ ...renewalForm, starts_on: event.target.value })} />
+                    <Input type="date" value={renewalForm.ends_on} onChange={(event) => setRenewalForm({ ...renewalForm, ends_on: event.target.value })} />
+                  </div>
+                  {createMembership.isSuccess ? <p className="text-sm text-emerald-700">Membership updated.</p> : null}
+                  <Button disabled={createMembership.isPending || !selectedId} type="button" onClick={() => createMembership.mutate()}>
+                    {createMembership.isPending ? "Saving..." : "Renew membership"}
+                  </Button>
+                </div>
+                <div className="grid gap-3 rounded-md border p-3">
+                  <p className="font-medium">Record payment</p>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <Input type="number" min={1} value={paymentForm.amount} onChange={(event) => setPaymentForm({ ...paymentForm, amount: Number(event.target.value) })} />
+                    <select className="h-10 rounded-md border bg-card px-3 text-sm outline-none ring-primary/20 transition focus:ring-4" value={paymentForm.method} onChange={(event) => setPaymentForm({ ...paymentForm, method: event.target.value })}>
+                      <option value="upi">UPI</option>
+                      <option value="cash">Cash</option>
+                      <option value="card">Card</option>
+                      <option value="netbanking">Netbanking</option>
+                    </select>
+                    <select className="h-10 rounded-md border bg-card px-3 text-sm outline-none ring-primary/20 transition focus:ring-4" value={paymentForm.status} onChange={(event) => setPaymentForm({ ...paymentForm, status: event.target.value })}>
+                      <option value="paid">Paid</option>
+                      <option value="pending">Pending</option>
+                      <option value="overdue">Overdue</option>
+                    </select>
+                    <Input value={paymentForm.reference} onChange={(event) => setPaymentForm({ ...paymentForm, reference: event.target.value })} placeholder="UPI ref / receipt no." />
+                  </div>
+                  {recordPayment.isSuccess ? <p className="text-sm text-emerald-700">Payment recorded.</p> : null}
+                  <Button disabled={recordPayment.isPending || !selectedId} type="button" onClick={() => recordPayment.mutate()}>
+                    {recordPayment.isPending ? "Recording..." : "Record payment"}
+                  </Button>
+                </div>
                 <div className="rounded-md border p-3">
                   <p className="font-medium">Recent action history</p>
                   <div className="mt-2 grid gap-2">
                     {current.workflows.slice(0, 4).map((workflow: any) => (
                       <div className="rounded-md bg-muted/40 p-2 text-sm" key={workflow.id}>
                         <strong>{workflow.title}</strong>
-                        <p className="text-muted-foreground">{label(workflow.status)} · {label(workflow.workflow_type)}</p>
+                        <p className="text-muted-foreground">{label(workflow.status)} - {label(workflow.workflow_type)}</p>
                       </div>
                     ))}
                     {current.workflows.length === 0 ? <p className="text-sm text-muted-foreground">No actions yet.</p> : null}
@@ -293,7 +417,7 @@ export function MembersPage() {
                     {(current.requests || []).slice(0, 4).map((request: any) => (
                       <div className="rounded-md bg-muted/40 p-2 text-sm" key={request.id}>
                         <strong>{request.title}</strong>
-                        <p className="text-muted-foreground">{label(request.request_type)} · {label(request.status)}</p>
+                        <p className="text-muted-foreground">{label(request.request_type)} - {label(request.status)}</p>
                       </div>
                     ))}
                     {current.requests?.length === 0 ? <p className="text-sm text-muted-foreground">No member requests.</p> : null}
@@ -314,7 +438,7 @@ export function MembersPage() {
             <div className="grid gap-3 rounded-md border p-3 md:grid-cols-[1fr_auto]" key={request.id}>
               <div>
                 <p className="font-medium">{request.title}</p>
-                <p className="text-sm text-muted-foreground">{request.member.name} · {label(request.request_type)}</p>
+                <p className="text-sm text-muted-foreground">{request.member.name} - {label(request.request_type)}</p>
                 <p className="mt-2 text-sm text-muted-foreground">{request.message}</p>
               </div>
               <div className="grid grid-cols-2 gap-2 md:min-w-48">
@@ -389,4 +513,36 @@ function recommend(risk: any) {
   if (codes.has("inactivity")) return "Trainer follow-up and attendance restart.";
   if (codes.has("goal_stagnation")) return "Review goals and set next milestone.";
   return "Keep warm with structured follow-up.";
+}
+
+function whatsappMessage(action: any) {
+  const memberName = action.member?.name || "there";
+  if (action.metadata?.automation === "silent_dropout") {
+    return `Hi ${memberName}, we missed you at the gym this week. Want us to help you restart with an easy session today or tomorrow?`;
+  }
+  if (action.metadata?.automation === "renewal_funnel") {
+    return `Hi ${memberName}, your gym membership renewal is due soon. You can renew with UPI/card/netbanking. Reply here and we will help you continue without a break.`;
+  }
+  return `Hi ${memberName}, this is a quick follow-up from your gym team: ${action.message || action.title}`;
+}
+
+function parseAttendanceRows(value: string) {
+  return value
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const [member_code, checked_in_at, method] = line.split(",").map((part) => part.trim());
+      return {
+        member_code,
+        checked_in_at: checked_in_at || undefined,
+        method: method || "qr",
+      };
+    });
+}
+
+function nextDate(days: number) {
+  const value = new Date();
+  value.setDate(value.getDate() + days);
+  return value.toISOString().slice(0, 10);
 }

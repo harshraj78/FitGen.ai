@@ -7,10 +7,13 @@ import type {
   GymTransformation,
   MemberDetail,
   MemberPayload,
+  MemberMembershipPayload,
   MemberRequest,
+  MembershipPlan,
   MembershipPlanPayload,
   Organization,
   OrganizationContext,
+  PaymentPayload,
   Profile,
 } from "./types";
 
@@ -129,6 +132,9 @@ export const api = {
   createMembershipPlan(organizationId: number, payload: MembershipPlanPayload) {
     return request(`/api/organizations/${organizationId}/membership-plans`, { method: "POST", body: JSON.stringify(payload) });
   },
+  membershipPlans(organizationId: number) {
+    return request<MembershipPlan[]>(`/api/organizations/${organizationId}/membership-plans`);
+  },
   createMember(organizationId: number, payload: MemberPayload) {
     return request<Profile>(`/api/organizations/${organizationId}/members`, { method: "POST", body: JSON.stringify(payload) });
   },
@@ -140,6 +146,15 @@ export const api = {
   },
   inviteMember(organizationId: number, memberId: number) {
     return request<{ member_id: number; invite_url: string; status: string; channel: string }>(`/api/organizations/${organizationId}/members/${memberId}/invite`, { method: "POST" });
+  },
+  createMembership(organizationId: number, memberId: number, payload: MemberMembershipPayload) {
+    return request(`/api/organizations/${organizationId}/members/${memberId}/memberships`, { method: "POST", body: JSON.stringify(payload) });
+  },
+  recordPayment(organizationId: number, memberId: number, payload: PaymentPayload) {
+    return request(`/api/organizations/${organizationId}/members/${memberId}/payments`, { method: "POST", body: JSON.stringify(payload) });
+  },
+  importAttendance(organizationId: number, rows: Array<{ member_code?: string; member_id?: number; checked_in_at?: string; method: string; notes?: string }>) {
+    return request<{ created: number; skipped: number; errors: string[] }>(`/api/organizations/${organizationId}/attendance/import`, { method: "POST", body: JSON.stringify(rows) });
   },
   updateAction(organizationId: number, workflowId: number, payload: { status: "open" | "completed" | "dismissed"; note?: string }) {
     return request(`/api/organizations/${organizationId}/business/actions/${workflowId}`, { method: "PATCH", body: JSON.stringify(payload) });
