@@ -1,237 +1,290 @@
 # FitGen.ai
 
-FitGen.ai is evolving into an AI-powered gym retention and coaching operating platform for multi-tenant B2B gym operations. The product focus is business-first: retention intelligence, renewal forecasting, revenue operations, trainer performance, operational follow-up workflows, and transformation tracking.
+FitGen.ai is a production-oriented gym operating system for retention, renewals, and member coaching. It is built for Indian gyms where the owner often runs sales, coaching, collections, and member follow-up from one desk.
 
-The coaching engine still supports adaptive workout and diet planning, but AI now assists gym teams instead of replacing them. The system is designed to help gym owners and trainers answer the daily operating question: "Which members need action today?"
+The core operating question is simple:
 
-## What It Includes
+> Which members need action today, and what should the gym team do next?
 
-- FastAPI backend with SQLAlchemy persistence
-- PostgreSQL-ready configuration through `DATABASE_URL`
-- SQLite default for local demos
-- Multi-tenant organizations with RBAC roles for gym owners, admins, trainers, nutritionists, members, and super admins
-- Org-scoped members, trainer assignments, membership plans, memberships, payments, attendance, goals, and audit logs
-- Renewal risk scoring using attendance decline, missed workouts, inactivity, adherence drop, goal stagnation, expired memberships, and trainer engagement gaps
-- Revenue operations analytics for MRR, active memberships, expiring memberships, unpaid members, renewal trends, retention trends, and churn-risk summaries
-- Trainer performance analytics for retention rate, adherence, goal success, active clients, consistency trends, overdue approvals, inactive clients, and high-risk clients
-- Retention workflow foundation for inactive member alerts, renewal reminders, trainer follow-ups, pending approval actions, stalled progress alerts, and high churn-risk queues
-- Transformation tracking with body metric snapshots, strength progression, consistency improvement, goal history, and transformation milestones
-- Stateful workout plans, workout sessions, set-level logs, feedback, diet plans, and weekly reviews
-- Rule-based workout planner with equipment fallback and progressive overload
-- Session Engine with readiness check-ins, partial session recovery, skipped exercises, and set-by-set performance capture
-- Normalized exercise catalog with canonical exercise IDs, aliases, substitutions, movement patterns, and equipment metadata
-- Hybrid LLM hook for coach-style plan summaries when `OPENAI_API_KEY` is set
-- India-friendly diet planner with budget and vegetarian/non-vegetarian constraints
+FitGen.ai combines a FastAPI backend, multi-tenant business data, a modern React dashboard, retention automation, workout/session tooling, and provider-ready WhatsApp/payment workflows.
 
-## Run Locally
+## Product Highlights
+
+- **Business OS for gyms:** organizations, roles, members, staff, plans, memberships, payments, attendance, goals, audit logs, and notifications.
+- **Indian-market retention automation:** 7-day QR/biometric silent-dropout alarms, WhatsApp-ready nudges, and renewal funnels at 15, 7, and 3 days before expiry.
+- **Owner-led workflow:** gyms can operate without a trainer team; actions fall back to owner/admin when no trainer is assigned.
+- **Member account activation:** owners create member profiles first, then invite members to activate login accounts from a secure invite link.
+- **Revenue operations:** active memberships, MRR run-rate, unpaid members, expiring memberships, renewal trends, and revenue at risk.
+- **Coaching layer:** adaptive workout plans, live workout sessions, readiness check-ins, diet planning, feedback, goals, and transformation tracking.
+- **Production posture:** Render-ready backend, Vercel-ready frontend, Docker support, Alembic migrations, CI workflow, CORS/env-driven deployment, and production demo-route gating.
+
+## Tech Stack
+
+| Layer | Technology |
+| --- | --- |
+| Backend | FastAPI, SQLAlchemy, Pydantic, Alembic |
+| Database | PostgreSQL in production, SQLite for local demos |
+| Frontend | React, Vite, TypeScript, Tailwind, TanStack Query |
+| Deployment | Render backend, Vercel frontend, Docker optional |
+| Auth | PBKDF2 password hashing, bearer sessions, logout revocation, member invite activation |
+| Automation | Retention workflows, notification events, WhatsApp/payment-link-ready metadata |
+
+## Repository Map
+
+```text
+app/
+  main.py                  FastAPI app, auth, member invite acceptance, legacy member APIs
+  models.py                SQLAlchemy domain models
+  schemas.py               Pydantic API contracts
+  routes/                  organization, business, trainer, audit, analytics, notification routes
+  services/                auth, tenancy, business ops, analytics, planner, notifications
+frontend-modern/           Production React/Vite application
+frontend/                  Older static frontend kept for compatibility/reference
+migrations/                Alembic schema migrations
+render.yaml                Render deployment blueprint
+Dockerfile                 Backend Docker image
+docker-compose.yml         Local full-stack pilot setup
+```
+
+## Key Workflows
+
+### 1. Gym Owner Onboarding
+
+1. Owner creates a business workspace.
+2. Owner adds membership plans.
+3. Owner creates members with phone/email/member code.
+4. Owner invites members to activate their own login.
+5. Dashboard begins tracking renewals, attendance gaps, actions, and revenue.
+
+### 2. Silent Dropout Alarm
+
+If an active member has no QR or biometric attendance scan for 7 consecutive days, FitGen.ai creates a high-priority action:
+
+- assigned to trainer if available;
+- otherwise assigned to owner/admin;
+- tagged as `silent_dropout`;
+- marked WhatsApp-ready when member phone exists;
+- safe fallback when phone is missing.
+
+### 3. Renewal Funnel
+
+For active memberships expiring in 15, 7, or 3 days, FitGen.ai creates renewal actions with:
+
+- membership and plan metadata;
+- amount and currency;
+- supported payment method intent: UPI, card, netbanking;
+- payment-link status;
+- WhatsApp template metadata for future provider delivery.
+
+### 4. Member Activation
+
+Owners do not need a member password at creation time. They create the member profile, then generate an invite link. The member accepts the invite, sets a password, and gets linked to the existing gym-scoped profile.
+
+This preserves business data continuity while giving members a real login.
+
+## API Highlights
+
+### Health and Auth
+
+- `GET /api/health`
+- `POST /api/auth/signup`
+- `POST /api/auth/login`
+- `POST /api/auth/logout`
+- `GET /api/auth/member-invite/{token}`
+- `POST /api/auth/member-invite/accept`
+
+### Organization Operations
+
+- `GET /api/organizations`
+- `POST /api/organizations`
+- `GET /api/organizations/{organization_id}/members`
+- `POST /api/organizations/{organization_id}/members`
+- `GET /api/organizations/{organization_id}/members/{member_id}/detail`
+- `POST /api/organizations/{organization_id}/members/{member_id}/invite`
+- `POST /api/organizations/{organization_id}/attendance/import`
+- `POST /api/organizations/{organization_id}/membership-plans`
+- `POST /api/organizations/{organization_id}/members/{member_id}/memberships`
+- `POST /api/organizations/{organization_id}/members/{member_id}/payments`
+- `POST /api/organizations/{organization_id}/members/{member_id}/attendance`
+
+### Business Intelligence
+
+- `GET /api/organizations/{organization_id}/business/dashboard`
+- `GET /api/organizations/{organization_id}/business/actions/today`
+- `PATCH /api/organizations/{organization_id}/business/actions/{workflow_id}`
+- `GET /api/organizations/{organization_id}/business/retention/forecast`
+- `GET /api/organizations/{organization_id}/business/retention/renewal-risk`
+- `GET /api/organizations/{organization_id}/business/revenue`
+- `GET /api/organizations/{organization_id}/business/trainers/performance`
+- `GET /api/organizations/{organization_id}/business/transformations/gym`
+
+### Member Coaching
+
+- `GET /api/users/{user_id}/dashboard`
+- `POST /api/users/{user_id}/plans/weekly`
+- `POST /api/users/{user_id}/sessions/start`
+- `GET /api/users/{user_id}/sessions/active`
+- `POST /api/sessions/{session_id}/exercises/{session_exercise_id}/sets`
+- `POST /api/sessions/{session_id}/finish`
+- `POST /api/users/{user_id}/feedback`
+
+## Local Development
+
+Backend:
 
 ```bash
 pip install -r requirements.txt
+alembic upgrade head
 uvicorn app.main:app --reload
 ```
 
-Open `http://127.0.0.1:8000`.
+Frontend:
 
-On first launch, the dashboard asks for a real profile instead of loading demo data automatically. Use **Create adaptive plan** for your own profile, or **Load demo profile** when you want seeded workout history.
+```bash
+cd frontend-modern
+npm install
+npm run dev
+```
 
-On Windows, you can also run:
+Windows helper:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\run-fitgen.ps1 8010
 ```
 
-Then open `http://127.0.0.1:8010`.
+## Environment Variables
 
-SQLite local demos auto-create tables on startup. For managed databases, use migrations instead.
+Backend:
 
-## PostgreSQL
-
-By default, FitGen AI uses `sqlite:///./fitgen.db`. To use PostgreSQL:
-
-```bash
-set DATABASE_URL=postgresql+psycopg://fitgen:fitgen@localhost:5432/fitgen_ai
-set AUTO_CREATE_TABLES=false
-alembic upgrade head
-uvicorn app.main:app --reload
-```
-
-For Linux/macOS shells:
-
-```bash
-export DATABASE_URL=postgresql+psycopg://fitgen:fitgen@localhost:5432/fitgen_ai
-export AUTO_CREATE_TABLES=false
-alembic upgrade head
-uvicorn app.main:app --reload
-```
-
-Copy `.env.example` to `.env` for local configuration. Keep secrets out of Git.
-
-## Deployment
-
-For a real business-user deployment, run the backend on Render and the modern frontend on Vercel, or use the included Docker setup for a single-host pilot.
-
-Backend production environment:
-
-```bash
+```text
 APP_ENV=production
-DATABASE_URL=postgresql+psycopg://...
+DATABASE_URL=<postgres-url>
 AUTO_CREATE_TABLES=false
 ENABLE_DEMO_ROUTES=false
 ALLOWED_ORIGINS=https://your-vercel-app.vercel.app
 SESSION_TTL_HOURS=168
+FRONTEND_APP_URL=https://your-vercel-app.vercel.app
 ```
 
-Render can use `render.yaml` as a starting point. After the database is attached, the start command runs:
+Provider-ready automation flags:
 
-```bash
-alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT
+```text
+WHATSAPP_AUTOMATION_ENABLED=false
+PAYMENT_LINKS_ENABLED=false
+BOOKING_BASE_URL=https://your-vercel-app.vercel.app/book
+PAYMENT_LINK_BASE_URL=<payment-provider-link-base>
 ```
 
-Vercel should deploy `frontend-modern` with:
+LLM enrichment is optional:
 
-```bash
+```text
+LLM_PROVIDER=groq
+GROQ_API_KEY=<stored only in hosting env vars>
+LLM_BASE_URL=https://api.groq.com/openai/v1
+LLM_MODEL=openai/gpt-oss-20b
+```
+
+Frontend:
+
+```text
 VITE_API_BASE_URL=https://your-render-api.onrender.com
 ```
 
-For local Docker verification:
+## Deployment
+
+Recommended private-pilot stack:
+
+- **Backend:** Render web service.
+- **Database:** Render Postgres, Neon, or Supabase Postgres.
+- **Frontend:** Vercel from `frontend-modern`.
+
+Render start command:
 
 ```bash
-docker compose up --build
+alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}
 ```
 
-Then open `http://127.0.0.1:8080`; the API runs at `http://127.0.0.1:8010`.
+Health check:
 
-## Database Migrations
+```http
+GET /api/health
+```
 
-FitGen AI uses Alembic for schema versioning:
+Expected response:
+
+```json
+{"status":"ok","service":"FitGen AI"}
+```
+
+## Verification
+
+Backend:
 
 ```bash
-alembic upgrade head
-alembic revision --autogenerate -m "describe change"
+python -m compileall app
+alembic heads
 ```
 
-The first migration creates users, workout plans, workout exercises, workout logs, feedback, diet plans, and weekly reviews. Later migrations add accounts, planned-exercise log links, and the v2 Session Engine tables:
-
-- `workout_sessions`
-- `readiness_checkins`
-- `workout_session_exercises`
-- `performed_sets`
-
-New session flows write set-level records and also maintain aggregate `workout_logs` rows for dashboard and weekly-review compatibility.
-
-Exercise normalization adds `exercises`, `exercise_aliases`, and `exercise_substitutions`. Existing name-based workout history remains valid, while new planned and session exercises can also link to canonical `exercise_id` values.
-
-## Business Operations APIs
-
-The B2B operating layer is exposed under organization-scoped API routes:
-
-- `GET /api/organizations/{organization_id}/business/dashboard` returns a gym-owner dashboard with revenue, renewal forecast, trainer performance, daily actions, and at-risk members.
-- `GET /api/organizations/{organization_id}/business/retention/renewal-risk` returns members most likely to not renew.
-- `GET /api/organizations/{organization_id}/business/retention/forecast` forecasts expiring memberships, expected renewals, and revenue at risk.
-- `POST /api/organizations/{organization_id}/business/retention/risks/refresh` persists renewal risk snapshots for auditability and trend tracking.
-- `GET /api/organizations/{organization_id}/business/revenue` returns MRR, active memberships, unpaid members, renewal trends, retention trends, and churn-risk summaries.
-- `GET /api/organizations/{organization_id}/business/trainers/performance` compares trainer effectiveness for gym owners.
-- `GET /api/organizations/{organization_id}/business/actions/today` returns the operational action queue.
-- `GET /api/organizations/{organization_id}/business/actions/by-type/{workflow_type}` returns focused queues such as inactive members, overdue renewals, pending approvals, stalled progress, and high-risk churn.
-- `POST /api/organizations/{organization_id}/business/members/{member_id}/body-metrics` records transformation body metrics.
-- `POST /api/organizations/{organization_id}/business/members/{member_id}/transformation-milestones` records transformation milestones.
-- `GET /api/organizations/{organization_id}/business/members/{member_id}/transformation` returns member transformation summaries.
-- `GET /api/organizations/{organization_id}/business/transformations/gym` returns gym-wide transformation metrics.
-
-These routes use existing organization RBAC helpers. Gym-wide business views require owner/admin access, while trainer-facing queues and trainer performance endpoints are scoped to the authenticated trainer where appropriate.
-
-## Optional LLM Enrichment
-
-The adaptive logic works without an LLM. To add concise coach-style reasoning summaries:
+Frontend:
 
 ```bash
-set OPENAI_API_KEY=your_key_here
-set LLM_MODEL=gpt-4o-mini
+cd frontend-modern
+npm run lint
+npm run build
 ```
 
-## Accounts
+Important smoke tests:
 
-FitGen AI supports lightweight local accounts:
+- Login and logout.
+- Business signup and workspace creation.
+- Create member with phone/email.
+- Generate member invite and accept it.
+- Create membership ending in 15, 7, or 3 days.
+- Record/import QR or biometric attendance.
+- Verify daily actions create dropout and renewal workflow items.
+- Complete or dismiss an action from the business UI.
 
-- Signup creates an account plus the first training profile.
-- Passwords are stored with PBKDF2-SHA256 hashes, not plaintext.
-- Browser sessions use bearer tokens stored in `localStorage`.
-- Demo mode remains available and creates an unowned local profile for testing.
-- Workout logs can be attached directly to planned exercises, so weekly completion and replanning are based on the actual schedule.
-- Active workout sessions are recovered from the backend after refresh, so in-progress training is not lost when the browser reloads.
+## Security and Privacy
 
-## Session Engine
+FitGen.ai handles sensitive health, attendance, and payment-adjacent data. Production rules:
 
-The v2 workout flow treats a live workout as a first-class backend resource. A session starts from a planned training day, copies its planned exercises into `workout_session_exercises`, records optional readiness data, and then accepts set-level logs through `performed_sets`.
-
-This keeps the existing MVP analytics stable while preparing the system for richer adaptation later:
-
-- `workout_sessions` stores lifecycle state: active, completed, or abandoned.
-- `readiness_checkins` captures energy, sleep, soreness, stress, and pain before training.
-- `workout_session_exercises` tracks per-exercise session status: pending, in progress, completed, or skipped.
-- `performed_sets` stores reps, weight, effort, pain flags, and notes for each set.
-- `workout_logs` remains as a compatibility summary table used by the dashboard, reports, and weekly review.
-
-The frontend now supports starting a session, logging individual sets, skipping remaining exercises, finishing only after all exercises are resolved, and recovering an active session after page refresh.
-
-## Exercise Catalog
-
-FitGen keeps exercise names for user-facing display, but v2 also stores canonical exercise records. This gives future adaptation logic a stable identity for movement patterns, substitutions, equipment-aware fallbacks, and pain-aware rules without breaking older logs that only have `exercise_name`.
-
-This is suitable for a product prototype. Before public deployment, add token expiry, refresh/revocation policy, HTTPS-only hosting, and stronger account recovery flows.
-
-## API Highlights
-
-- `GET /api/organizations/{organization_id}/business/dashboard` returns the gym-owner operating dashboard
-- `GET /api/organizations/{organization_id}/business/actions/today` returns operational daily actions
-- `GET /api/organizations/{organization_id}/business/revenue` returns revenue operations metrics
-- `GET /api/organizations/{organization_id}/business/trainers/performance` compares trainer effectiveness
-- `GET /api/organizations/{organization_id}/business/retention/forecast` returns renewal forecast analytics
-- `GET /api/organizations/{organization_id}/trainer/clients` returns trainer-assigned clients
-- `GET /api/organizations/{organization_id}/trainer/plan-approvals/pending` returns pending trainer approvals
-- `GET /api/bootstrap` creates and returns a demo user
-- `GET /api/users/{user_id}/dashboard` returns the legacy member dashboard payload
-- `POST /api/users/{user_id}/plans/weekly` generates a new weekly plan
-- `POST /api/users/{user_id}/sessions/start` starts or resumes an active workout session
-- `GET /api/users/{user_id}/sessions/active` returns the in-progress session for refresh recovery
-- `POST /api/sessions/{session_id}/exercises/{session_exercise_id}/sets` logs one performed set
-- `POST /api/sessions/{session_id}/exercises/{session_exercise_id}/skip` skips a session exercise
-- `POST /api/sessions/{session_id}/finish` completes a fully resolved session
-- `POST /api/sessions/{session_id}/abandon` abandons an active session
-- `POST /api/users/{user_id}/workouts/logs` records performance
-- `POST /api/users/{user_id}/feedback` adapts next planning decisions
-- `POST /api/users/{user_id}/weekly-review` creates a weekly review
-- `GET /api/users/{user_id}/report/export` exports a plain-text weekly report
+- Keep secrets in hosting environment variables only.
+- Never commit API keys, database URLs, or payment provider credentials.
+- Keep demo routes disabled in production.
+- Scope every organization route by `organization_id` and role.
+- Use Alembic migrations for schema changes.
+- Do not mark WhatsApp/payment delivery as live until provider webhooks are connected and verified.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    OWNER["Gym Owner Dashboard"] --> API["FastAPI API"]
-    TRAINER["Trainer Workspace"] --> API
-    MEMBER["Member Coaching UI"] --> API
-    API --> DB[("PostgreSQL / SQLite")]
-    API --> RI["Retention Intelligence"]
-    API --> RO["Revenue Operations"]
-    API --> TP["Trainer Performance"]
-    API --> RA["Retention Automation"]
-    API --> TS["Transformation Tracking"]
-    API --> WP["Workout Planner"]
-    API --> SE["Session Engine"]
-    API --> DP["Diet Planner"]
-    API --> N["Notifications"]
-    RI --> DB
-    RO --> DB
-    TP --> DB
-    RA --> N
-    RA --> DB
-    TS --> DB
-    WP --> DB
-    SE --> DB
-    SE --> WL["Aggregate workout_logs"]
-    WL --> DB
-    DP --> DB
-    API -. optional .-> LLM["OpenAI / Local LLM"]
+    Owner["Gym Owner"] --> Web["React Business UI"]
+    Member["Member"] --> MemberUI["React Member UI"]
+    Web --> API["FastAPI API"]
+    MemberUI --> API
+    API --> DB[("PostgreSQL")]
+    API --> Auth["Auth + Invite Linking"]
+    API --> Ops["Business Ops"]
+    Ops --> Retention["Retention Automation"]
+    Ops --> Revenue["Revenue Intelligence"]
+    Ops --> Attendance["QR/Biometric Attendance"]
+    Ops --> Notify["Notification Events"]
+    Notify -. provider-ready .-> WhatsApp["WhatsApp Provider"]
+    Revenue -. provider-ready .-> Payments["UPI/Card/Netbanking Gateway"]
+    API --> Coaching["Workout + Diet + Session Engine"]
 ```
 
-The architecture keeps business operations separate from coaching generation. Retention, revenue, trainer performance, automation, and transformation services aggregate existing org-scoped data and can scale toward background jobs, materialized snapshots, and external channels such as email, WhatsApp, and push notifications.
+## Roadmap
+
+- Real WhatsApp provider adapter with approved templates and delivery status.
+- Payment gateway adapter with UPI/card/netbanking links and webhook verification.
+- Background scheduler for daily automation runs.
+- Password reset and stronger rate limiting.
+- Tenant-isolation test coverage for every organization route.
+- Audit-log UI and data export/deletion workflows.
+- Error monitoring and database backup/restore playbook.
+
+## Why This Project Matters
+
+Most small and mid-size gyms lose revenue silently: members stop attending, renewals are tracked manually, and owners discover churn too late. FitGen.ai turns those signals into daily operational actions, designed for the way real gyms work in India.

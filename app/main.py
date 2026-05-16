@@ -22,7 +22,7 @@ from app.routes.notifications import router as notification_router
 from app.routes.organizations import router as organization_router
 from app.routes.sessions import router as session_router
 from app.routes.trainer_workspace import router as trainer_workspace_router
-from app.services.auth import account_dict, create_session, get_account_from_authorization, hash_password, normalize_email, revoke_session, verify_password
+from app.services.auth import account_dict, create_session, get_account_from_authorization, hash_invite_token, hash_password, normalize_email, revoke_session, verify_password
 from app.services.demo_seed import DemoSeedService
 from app.services.diet_planner import DietPlanner
 from app.services.llm import LLMService
@@ -154,6 +154,57 @@ def login(payload: schemas.AccountLogin, db: Session = Depends(get_db)) -> dict:
     session = create_session(db, account)
     profile = db.query(models.UserProfile).filter(models.UserProfile.account_id == account.id).order_by(models.UserProfile.id).first()
     return {"token": session.token, "account": account_dict(account), "profile": _user_dict(profile) if profile else None}
+
+
+@app.get("/api/auth/member-invite/{token}")
+def member_invite_status(token: str, db: Session = Depends(get_db)) -> dict:
+    member = _member_by_invite(db, token)
+    organization = db.get(models.Organization, member.organization_id) if member.organization_id else None
+    return {
+        "member": {"id": member.id, "name": member.name, "email": member.email, "phone": member.phone},
+        "organization": {"id": organization.id, "name": organization.name} if organization else None,
+        "accepted": member.invite_accepted_at is not None,
+    }
+
+
+@app.post("/api/auth/member-invite/accept", response_model=schemas.AuthOut)
+def accept_member_invite(payload: schemas.MemberInviteAccept, db: Session = Depends(get_db)) -> dict:
+    member = _member_by_invite(db, payload.token)
+    if member.account_id is not None:
+        raise HTTPException(status_code=409, detail="This member invite has already been accepted")
+    email = normalize_email(payload.email)
+    account = db.query(models.Account).filter(models.Account.email == email).first()
+    if account and not verify_password(payload.password, account.password_hash):
+        raise HTTPException(status_code=409, detail="Email already exists. Log in or use another email.")
+    if account is None:
+        account = models.Account(email=email, password_hash=hash_password(payload.password))
+        db.add(account)
+        db.flush()
+    if member.organization_id is not None:
+        existing_membership = (
+            db.query(models.OrganizationMembership)
+            .filter(models.OrganizationMembership.organization_id == member.organization_id, models.OrganizationMembership.account_id == account.id)
+            .first()
+        )
+        if existing_membership:
+            if existing_membership.role != models.OrganizationRole.member.value:
+                raise HTTPException(status_code=409, detail="This email already belongs to gym staff. Use a different member email.")
+            existing_membership.active = True
+        else:
+            db.add(
+                models.OrganizationMembership(
+                    organization_id=member.organization_id,
+                    account_id=account.id,
+                    role=models.OrganizationRole.member.value,
+                )
+            )
+    member.account_id = account.id
+    member.email = email
+    member.invite_accepted_at = datetime.utcnow()
+    member.invite_token_hash = ""
+    db.commit()
+    session = create_session(db, account)
+    return {"token": session.token, "account": account_dict(account), "profile": _user_dict(member)}
 
 
 @app.get("/api/auth/me", response_model=schemas.AuthOut)
@@ -362,7 +413,7 @@ def log_workout(
     db: Session = Depends(get_db),
     account: models.Account | None = Depends(_optional_account),
 ) -> dict:
-    _get_user(db, user_id, account)
+    user = _get_user(db, user_id, account)
     if payload.planned_exercise_id is not None:
         planned_exercise = db.get(models.WorkoutExercise, payload.planned_exercise_id)
         if not planned_exercise or planned_exercise.plan.user_id != user_id:
@@ -456,6 +507,8 @@ def _user_dict(user: models.UserProfile) -> dict:
         "organization_id": user.organization_id,
         "assigned_trainer_id": user.assigned_trainer_id,
         "member_code": user.member_code,
+        "phone": user.phone,
+        "email": user.email,
         "status": user.status,
         "joined_on": user.joined_on.isoformat() if user.joined_on else None,
         "name": user.name,
@@ -581,6 +634,13 @@ def _diet_analysis_fallback(user: models.UserProfile, current_plan: dict | None,
 
 def label_goal(goal: str) -> str:
     return goal.replace("_", " ")
+
+
+def _member_by_invite(db: Session, token: str) -> models.UserProfile:
+    member = db.query(models.UserProfile).filter(models.UserProfile.invite_token_hash == hash_invite_token(token)).first()
+    if not member:
+        raise HTTPException(status_code=404, detail="Member invite is invalid or expired")
+    return member
 
 
 def _seed_demo_history(db: Session, user: models.UserProfile) -> None:

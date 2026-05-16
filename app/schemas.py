@@ -46,6 +46,8 @@ class UserProfileOut(UserProfileCreate):
     organization_id: int | None = None
     status: str = "active"
     joined_on: date | None = None
+    invited_at: datetime | None = None
+    invite_accepted_at: datetime | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -60,6 +62,12 @@ class AccountSignup(BaseModel):
 class AccountLogin(BaseModel):
     email: str
     password: str
+
+
+class MemberInviteAccept(BaseModel):
+    token: str = Field(min_length=20, max_length=256)
+    email: str
+    password: str = Field(min_length=8, max_length=128)
 
 
 class AuthOut(BaseModel):
@@ -256,6 +264,20 @@ class PaymentOut(PaymentCreate):
 class AttendanceCheckinCreate(BaseModel):
     method: str = "manual"
     notes: str = Field(default="", max_length=1000)
+
+
+class AttendanceImportRow(BaseModel):
+    member_id: int | None = None
+    member_code: str = Field(default="", max_length=80)
+    checked_in_at: datetime | None = None
+    method: str = "qr"
+    notes: str = Field(default="", max_length=1000)
+
+
+class AttendanceImportResult(BaseModel):
+    created: int
+    skipped: int
+    errors: list[str]
 
 
 class AttendanceCheckinOut(BaseModel):
@@ -506,10 +528,23 @@ class RetentionWorkflowOut(BaseModel):
     created_at: datetime | None = None
 
 
+class RetentionWorkflowUpdate(BaseModel):
+    status: str = Field(pattern="^(open|completed|dismissed)$")
+    note: str = Field(default="", max_length=1000)
+
+
 class OperationalDailyActionsOut(BaseModel):
     organization_id: int
     actions: list[RetentionWorkflowOut]
     summary: dict[str, int]
+
+
+class MemberInviteOut(BaseModel):
+    member_id: int
+    invite_url: str
+    status: str
+    channel: str
+    expires_note: str = "Invite remains valid until accepted or regenerated."
 
 
 class BodyMetricSnapshotCreate(BaseModel):
