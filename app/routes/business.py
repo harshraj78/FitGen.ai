@@ -1,3 +1,6 @@
+import json
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -140,6 +143,36 @@ def daily_actions_by_type(
     result = RetentionAutomationService(db).daily_actions(organization_id, persist=persist, trainer_account_id=trainer_scope)
     actions = [action for action in result["actions"] if action["workflow_type"] == normalized_type]
     return {"organization_id": organization_id, "actions": actions, "summary": {normalized_type: len(actions)}}
+
+
+@router.patch("/actions/{workflow_id}", response_model=schemas.RetentionWorkflowOut)
+def update_action_workflow(
+    organization_id: int,
+    workflow_id: int,
+    payload: schemas.RetentionWorkflowUpdate,
+    db: Session = Depends(get_db),
+    account: models.Account = Depends(require_account),
+) -> dict:
+    membership = require_org_membership(db, organization_id, account, COACH_ROLES)
+    workflow = db.get(models.RetentionWorkflow, workflow_id)
+    if not workflow or workflow.organization_id != organization_id:
+        raise HTTPException(status_code=404, detail="Action not found")
+    if membership.role in {models.OrganizationRole.trainer.value, models.OrganizationRole.nutritionist.value} and workflow.assigned_account_id != account.id:
+        raise HTTPException(status_code=403, detail="You can only update actions assigned to you")
+    workflow.status = payload.status
+    if payload.status == models.RetentionWorkflowStatus.completed.value:
+        workflow.completed_at = workflow.completed_at or datetime.utcnow()
+    metadata = {}
+    if workflow.metadata_json:
+        metadata = json.loads(workflow.metadata_json)
+    if payload.note:
+        metadata["latest_note"] = payload.note
+        metadata["latest_note_by_account_id"] = account.id
+    workflow.metadata_json = json.dumps(metadata, sort_keys=True)
+    write_audit(db, "retention_action.updated", "retention_workflow", workflow.id, account, organization_id, {"status": payload.status})
+    db.commit()
+    db.refresh(workflow)
+    return RetentionAutomationService(db)._serialize_workflow(workflow)
 
 
 @router.post("/members/{member_id}/body-metrics", response_model=schemas.BodyMetricSnapshotOut)

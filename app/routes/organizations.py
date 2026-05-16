@@ -1,12 +1,13 @@
 from datetime import date, datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import desc, func
 from sqlalchemy.orm import Session
 
 from app import models, schemas
+from app.config import get_settings
 from app.db import get_db
-from app.services.auth import require_account
+from app.services.auth import create_invite_token, hash_invite_token, require_account
 from app.services.explainability import ExplainabilityService
 from app.services.notifications import NotificationService
 from app.services.tenancy import ADMIN_ROLES, COACH_ROLES, OWNER_ROLES, get_org_member, normalize_slug, require_org_membership, require_plan_reviewer, serialize_goal, write_audit
@@ -188,6 +189,104 @@ def create_member(
     return member
 
 
+@router.get("/{organization_id}/members/{member_id}/detail")
+def member_detail(
+    organization_id: int,
+    member_id: int,
+    db: Session = Depends(get_db),
+    account: models.Account = Depends(require_account),
+) -> dict:
+    member = get_org_member(db, organization_id, member_id, account, COACH_ROLES | {models.OrganizationRole.member.value})
+    latest_membership = (
+        db.query(models.MemberMembership)
+        .filter(models.MemberMembership.organization_id == organization_id, models.MemberMembership.member_id == member.id)
+        .order_by(desc(models.MemberMembership.ends_on), desc(models.MemberMembership.id))
+        .first()
+    )
+    payments = (
+        db.query(models.Payment)
+        .filter(models.Payment.organization_id == organization_id, models.Payment.member_id == member.id)
+        .order_by(desc(models.Payment.due_on), desc(models.Payment.id))
+        .limit(10)
+        .all()
+    )
+    checkins = (
+        db.query(models.AttendanceCheckin)
+        .filter(models.AttendanceCheckin.organization_id == organization_id, models.AttendanceCheckin.member_id == member.id)
+        .order_by(desc(models.AttendanceCheckin.checked_in_at), desc(models.AttendanceCheckin.id))
+        .limit(10)
+        .all()
+    )
+    workflows = (
+        db.query(models.RetentionWorkflow)
+        .filter(models.RetentionWorkflow.organization_id == organization_id, models.RetentionWorkflow.member_id == member.id)
+        .order_by(desc(models.RetentionWorkflow.created_at), desc(models.RetentionWorkflow.id))
+        .limit(10)
+        .all()
+    )
+    return {
+        "member": schemas.UserProfileOut.model_validate(member).model_dump(),
+        "login_status": "active" if member.account_id else "invited" if member.invited_at else "not_invited",
+        "latest_membership": schemas.MemberMembershipOut.model_validate(latest_membership).model_dump() if latest_membership else None,
+        "payments": [schemas.PaymentOut.model_validate(payment).model_dump() for payment in payments],
+        "attendance": [schemas.AttendanceCheckinOut.model_validate(checkin).model_dump() for checkin in checkins],
+        "workflows": [
+            {
+                "id": workflow.id,
+                "workflow_type": workflow.workflow_type,
+                "status": workflow.status,
+                "priority": workflow.priority,
+                "title": workflow.title,
+                "message": workflow.message,
+                "due_on": workflow.due_on,
+                "metadata": workflow.metadata_json,
+            }
+            for workflow in workflows
+        ],
+    }
+
+
+@router.post("/{organization_id}/members/{member_id}/invite", response_model=schemas.MemberInviteOut)
+def invite_member(
+    organization_id: int,
+    member_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    account: models.Account = Depends(require_account),
+) -> dict:
+    member = get_org_member(db, organization_id, member_id, account, ADMIN_ROLES)
+    if member.account_id:
+        raise HTTPException(status_code=409, detail="Member already has a login account")
+    token = create_invite_token()
+    member.invite_token_hash = hash_invite_token(token)
+    member.invited_at = datetime.utcnow()
+    frontend_url = get_settings().frontend_app_url or str(request.base_url).rstrip("/")
+    invite_url = f"{frontend_url.rstrip('/')}/app/invite/{token}"
+    channels = [models.NotificationChannel.in_app.value]
+    if member.phone:
+        channels.append(models.NotificationChannel.whatsapp.value)
+    NotificationService(db).emit(
+        models.NotificationEventType.trainer_follow_up_due.value,
+        "Member invite prepared",
+        f"Invite {member.name} to activate their FitGen.ai member account: {invite_url}",
+        organization_id=organization_id,
+        recipient_account_id=account.id,
+        recipient_user_id=member.id,
+        entity_type="user_profile",
+        entity_id=member.id,
+        payload={"invite_url": invite_url, "member_id": member.id, "phone_present": bool(member.phone)},
+        channels=channels,
+    )
+    write_audit(db, "member.invited", "user_profile", member.id, account, organization_id, {"channel": "whatsapp" if member.phone else "manual"})
+    db.commit()
+    return {
+        "member_id": member.id,
+        "invite_url": invite_url,
+        "status": "prepared",
+        "channel": "whatsapp" if member.phone else "manual",
+    }
+
+
 @router.patch("/{organization_id}/members/{member_id}/trainer", response_model=schemas.UserProfileOut)
 def assign_trainer(
     organization_id: int,
@@ -302,6 +401,53 @@ def record_attendance(
     db.commit()
     db.refresh(checkin)
     return checkin
+
+
+@router.post("/{organization_id}/attendance/import", response_model=schemas.AttendanceImportResult)
+def import_attendance(
+    organization_id: int,
+    rows: list[schemas.AttendanceImportRow],
+    db: Session = Depends(get_db),
+    account: models.Account = Depends(require_account),
+) -> dict:
+    require_org_membership(db, organization_id, account, COACH_ROLES)
+    created = 0
+    skipped = 0
+    errors: list[str] = []
+    allowed_methods = {method.value for method in models.AttendanceMethod}
+    for index, row in enumerate(rows, start=1):
+        if row.method not in allowed_methods:
+            skipped += 1
+            errors.append(f"Row {index}: unsupported attendance method {row.method}")
+            continue
+        member = None
+        if row.member_id is not None:
+            member = db.get(models.UserProfile, row.member_id)
+            if member and member.organization_id != organization_id:
+                member = None
+        elif row.member_code:
+            member = (
+                db.query(models.UserProfile)
+                .filter(models.UserProfile.organization_id == organization_id, models.UserProfile.member_code == row.member_code)
+                .first()
+            )
+        if member is None:
+            skipped += 1
+            errors.append(f"Row {index}: member not found")
+            continue
+        checkin = models.AttendanceCheckin(
+            organization_id=organization_id,
+            member_id=member.id,
+            checked_in_at=row.checked_in_at or datetime.utcnow(),
+            method=row.method,
+            notes=row.notes,
+            recorded_by_account_id=account.id,
+        )
+        db.add(checkin)
+        created += 1
+    write_audit(db, "attendance.imported", "attendance_checkin", None, account, organization_id, {"created": created, "skipped": skipped})
+    db.commit()
+    return {"created": created, "skipped": skipped, "errors": errors[:25]}
 
 
 @router.post("/{organization_id}/members/{member_id}/goals", response_model=schemas.GoalOut)

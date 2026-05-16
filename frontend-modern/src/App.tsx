@@ -1,7 +1,8 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { LoginPage } from "@/features/auth/LoginPage";
+import { MemberInvitePage } from "@/features/auth/MemberInvitePage";
 import { BusinessOverview } from "@/features/business/BusinessOverview";
-import { DailyActionsPage, RetentionPage, TrainerPerformancePage, TransformationPage } from "@/features/business/BusinessSecondaryPages";
+import { DailyActionsPage, MembersPage, RetentionPage, TrainerPerformancePage, TransformationPage } from "@/features/business/BusinessSecondaryPages";
 import { GoalsPage, MemberDashboard, ProgressPage, WorkoutPage } from "@/features/member/MemberDashboard";
 import { BusinessOnboardingPage, MemberOnboardingPage, TrainerOnboardingPage } from "@/features/onboarding/OnboardingPages";
 import { BusinessLayout } from "@/layouts/BusinessLayout";
@@ -14,11 +15,13 @@ export function App() {
       <Route path="/" element={<Navigate to="/business/login" replace />} />
       <Route path="/business/login" element={<LoginPage audience="business" />} />
       <Route path="/app/login" element={<LoginPage audience="member" />} />
+      <Route path="/app/invite/:token" element={<MemberInvitePage />} />
 
       <Route element={<RequireAuth redirectTo="/business/login" />}>
         <Route element={<BusinessLayout />}>
           <Route path="/business" element={<BusinessOverview />} />
           <Route path="/business/onboarding" element={<BusinessOnboardingPage />} />
+          <Route path="/business/members" element={<MembersPage />} />
           <Route path="/business/trainer-onboarding" element={<TrainerOnboardingPage />} />
           <Route path="/business/retention" element={<RetentionPage />} />
           <Route path="/business/trainers" element={<TrainerPerformancePage />} />

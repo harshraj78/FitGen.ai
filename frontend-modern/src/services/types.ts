@@ -15,6 +15,10 @@ export type Profile = {
   gym_type: string;
   weight_kg: number;
   height_cm: number;
+  member_code?: string;
+  status?: string;
+  invited_at?: string | null;
+  invite_accepted_at?: string | null;
 };
 
 export type Organization = {
@@ -122,6 +126,15 @@ export type BusinessDashboard = {
     summary: Record<string, number>;
   };
   at_risk_members: Array<any>;
+};
+
+export type MemberDetail = {
+  member: Profile;
+  login_status: "active" | "invited" | "not_invited";
+  latest_membership: any | null;
+  payments: Array<any>;
+  attendance: Array<any>;
+  workflows: Array<any>;
 };
 
 export type GymTransformation = {

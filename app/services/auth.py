@@ -27,6 +27,14 @@ def hash_password(password: str) -> str:
     return f"pbkdf2_sha256${HASH_ITERATIONS}${_b64(salt)}${_b64(digest)}"
 
 
+def create_invite_token() -> str:
+    return secrets.token_urlsafe(32)
+
+
+def hash_invite_token(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
 def verify_password(password: str, stored_hash: str) -> bool:
     try:
         algorithm, iterations, salt, digest = stored_hash.split("$")

@@ -1,4 +1,7 @@
-import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Copy, UserPlus } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { usePrimaryOrganization } from "@/hooks/useOrganization";
@@ -101,7 +104,13 @@ export function TrainerPerformancePage() {
 }
 
 export function DailyActionsPage() {
-  const { dashboard } = useBusinessData();
+  const { org, dashboard } = useBusinessData();
+  const queryClient = useQueryClient();
+  const updateAction = useMutation({
+    mutationFn: ({ workflowId, status }: { workflowId: number; status: "completed" | "dismissed" }) =>
+      api.updateAction(org.organization!.id, workflowId, { status }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["business-dashboard", org.organization?.id] }),
+  });
   if (dashboard.isLoading) return <PageLoading label="Loading daily operations..." />;
   if (!dashboard.data) return <EmptyState title="Actions unavailable" detail={dashboard.error?.message || "No action data found."} />;
   return (
@@ -130,9 +139,145 @@ export function DailyActionsPage() {
                 </div>
               ) : null}
               <p className="mt-4 text-sm font-medium">{action.member.name}</p>
+              {action.id ? (
+                <div className="mt-4 grid grid-cols-2 gap-2">
+                  <Button className="h-9 px-3" type="button" onClick={() => updateAction.mutate({ workflowId: action.id, status: "completed" })}>
+                    Complete
+                  </Button>
+                  <Button className="h-9 px-3" type="button" variant="secondary" onClick={() => updateAction.mutate({ workflowId: action.id, status: "dismissed" })}>
+                    Dismiss
+                  </Button>
+                </div>
+              ) : null}
             </CardContent>
           </Card>
         ))}
+      </section>
+    </div>
+  );
+}
+
+export function MembersPage() {
+  const org = usePrimaryOrganization();
+  const queryClient = useQueryClient();
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [inviteUrl, setInviteUrl] = useState("");
+  const members = useQuery({
+    queryKey: ["members", org.organization?.id],
+    queryFn: () => api.members(org.organization!.id),
+    enabled: Boolean(org.organization?.id),
+  });
+  const detail = useQuery({
+    queryKey: ["member-detail", org.organization?.id, selectedId],
+    queryFn: () => api.memberDetail(org.organization!.id, selectedId!),
+    enabled: Boolean(org.organization?.id && selectedId),
+  });
+  const invite = useMutation({
+    mutationFn: (memberId: number) => api.inviteMember(org.organization!.id, memberId),
+    onSuccess: async (data) => {
+      setInviteUrl(data.invite_url);
+      await queryClient.invalidateQueries({ queryKey: ["members", org.organization?.id] });
+      await queryClient.invalidateQueries({ queryKey: ["member-detail", org.organization?.id, selectedId] });
+    },
+  });
+
+  if (org.isLoading || members.isLoading) return <PageLoading label="Loading members..." />;
+  if (!members.data) return <EmptyState title="Members unavailable" detail={members.error?.message || "No member data found."} />;
+  const current = detail.data;
+  return (
+    <div className="grid gap-6">
+      <PageHeader eyebrow="Member operations" title="Members, invites, attendance, and renewals" subtitle="Give gym owners one place to activate member accounts and inspect operational status." />
+      {inviteUrl ? (
+        <Card>
+          <CardContent className="flex flex-col gap-3 pt-5 md:flex-row md:items-center md:justify-between">
+            <p className="break-all text-sm text-muted-foreground">{inviteUrl}</p>
+            <Button type="button" variant="secondary" onClick={() => navigator.clipboard?.writeText(inviteUrl)}>
+              <Copy className="mr-2 h-4 w-4" />
+              Copy invite
+            </Button>
+          </CardContent>
+        </Card>
+      ) : null}
+      <section className="grid gap-6 xl:grid-cols-[1fr_0.9fr]">
+        <Card>
+          <CardHeader>
+            <CardTitle>Member list</CardTitle>
+            <span className="text-sm text-muted-foreground">{members.data.length} members</span>
+          </CardHeader>
+          <CardContent className="scroll-table">
+            <table className="w-full text-left text-sm">
+              <thead className="text-muted-foreground">
+                <tr>
+                  <th className="py-2">Member</th>
+                  <th>Contact</th>
+                  <th>Login</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {members.data.map((member) => (
+                  <tr className="border-t" key={member.id}>
+                    <td className="py-3">
+                      <button className="text-left font-medium text-primary" type="button" onClick={() => setSelectedId(member.id)}>
+                        {member.name}
+                      </button>
+                      <p className="text-xs text-muted-foreground">{member.member_code || "No member code"}</p>
+                    </td>
+                    <td>{member.phone || member.email || "Missing"}</td>
+                    <td>
+                      <Badge tone={member.account_id ? "success" : member.invited_at ? "warning" : "neutral"}>
+                        {member.account_id ? "Active" : member.invited_at ? "Invited" : "Not invited"}
+                      </Badge>
+                    </td>
+                    <td>
+                      <Button className="h-9 px-3" disabled={Boolean(member.account_id) || invite.isPending} type="button" variant="secondary" onClick={() => invite.mutate(member.id)}>
+                        <UserPlus className="mr-2 h-4 w-4" />
+                        Invite
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Member detail</CardTitle>
+            <span className="text-sm text-muted-foreground">{current?.member.name || "Select a member"}</span>
+          </CardHeader>
+          <CardContent className="grid gap-4">
+            {!selectedId ? <p className="text-sm text-muted-foreground">Choose a member to review login, membership, attendance, payments, and action history.</p> : null}
+            {detail.isLoading ? <p className="text-sm text-muted-foreground">Loading member detail...</p> : null}
+            {current ? (
+              <>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <Stat label="Login" value={label(current.login_status)} />
+                  <Stat label="Payments" value={current.payments.length} />
+                  <Stat label="Check-ins" value={current.attendance.length} />
+                </div>
+                <div className="rounded-md border p-3">
+                  <p className="font-medium">Latest membership</p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {current.latest_membership ? `${current.latest_membership.status} until ${current.latest_membership.ends_on}` : "No membership recorded"}
+                  </p>
+                </div>
+                <div className="rounded-md border p-3">
+                  <p className="font-medium">Recent action history</p>
+                  <div className="mt-2 grid gap-2">
+                    {current.workflows.slice(0, 4).map((workflow: any) => (
+                      <div className="rounded-md bg-muted/40 p-2 text-sm" key={workflow.id}>
+                        <strong>{workflow.title}</strong>
+                        <p className="text-muted-foreground">{label(workflow.status)} · {label(workflow.workflow_type)}</p>
+                      </div>
+                    ))}
+                    {current.workflows.length === 0 ? <p className="text-sm text-muted-foreground">No actions yet.</p> : null}
+                  </div>
+                </div>
+              </>
+            ) : null}
+          </CardContent>
+        </Card>
       </section>
     </div>
   );

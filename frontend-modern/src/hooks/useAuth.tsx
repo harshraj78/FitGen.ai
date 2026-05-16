@@ -10,6 +10,7 @@ type AuthContextValue = {
   isAuthenticated: boolean;
   isLoading: boolean;
   login: (payload: { email: string; password: string }) => Promise<Profile | null>;
+  acceptInvite: (payload: { token: string; email: string; password: string }) => Promise<Profile | null>;
   businessSignup: (payload: BusinessSignupPayload) => Promise<void>;
   startBusinessDemo: () => Promise<void>;
   logout: () => void;
@@ -35,6 +36,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       isLoading: session.isLoading,
       async login(payload) {
         const response = await api.login(payload);
+        setToken(response.token);
+        if (response.profile?.id) {
+          setActiveProfileId(response.profile.id);
+        }
+        setSessionVersion((version) => version + 1);
+        queryClient.setQueryData(["auth", "me", sessionVersion + 1], response);
+        return response.profile ?? null;
+      },
+      async acceptInvite(payload) {
+        const response = await api.acceptInvite(payload);
         setToken(response.token);
         if (response.profile?.id) {
           setActiveProfileId(response.profile.id);

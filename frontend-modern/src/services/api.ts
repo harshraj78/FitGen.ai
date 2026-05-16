@@ -5,6 +5,7 @@ import type {
   BusinessSignupPayload,
   Dashboard,
   GymTransformation,
+  MemberDetail,
   MemberPayload,
   MembershipPlanPayload,
   Organization,
@@ -129,6 +130,24 @@ export const api = {
   },
   createMember(organizationId: number, payload: MemberPayload) {
     return request<Profile>(`/api/organizations/${organizationId}/members`, { method: "POST", body: JSON.stringify(payload) });
+  },
+  members(organizationId: number) {
+    return request<Profile[]>(`/api/organizations/${organizationId}/members`);
+  },
+  memberDetail(organizationId: number, memberId: number) {
+    return request<MemberDetail>(`/api/organizations/${organizationId}/members/${memberId}/detail`);
+  },
+  inviteMember(organizationId: number, memberId: number) {
+    return request<{ member_id: number; invite_url: string; status: string; channel: string }>(`/api/organizations/${organizationId}/members/${memberId}/invite`, { method: "POST" });
+  },
+  updateAction(organizationId: number, workflowId: number, payload: { status: "open" | "completed" | "dismissed"; note?: string }) {
+    return request(`/api/organizations/${organizationId}/business/actions/${workflowId}`, { method: "PATCH", body: JSON.stringify(payload) });
+  },
+  inviteStatus(token: string) {
+    return request<{ member: { id: number; name: string; email: string; phone: string }; organization: { id: number; name: string } | null; accepted: boolean }>(`/api/auth/member-invite/${token}`);
+  },
+  acceptInvite(payload: { token: string; email: string; password: string }) {
+    return request<AuthResponse>("/api/auth/member-invite/accept", { method: "POST", body: JSON.stringify(payload) });
   },
   memberDashboard(profileId: number) {
     return request<Dashboard>(`/api/users/${profileId}/dashboard`);

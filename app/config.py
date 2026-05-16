@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     payment_links_enabled: bool = False
     booking_base_url: str | None = None
     payment_link_base_url: str | None = None
+    frontend_app_url: str | None = None
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 

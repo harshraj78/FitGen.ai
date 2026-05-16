@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 const nav = [
   { to: "/business", label: "Overview", icon: BarChart3 },
   { to: "/business/onboarding", label: "Setup", icon: ClipboardCheck },
+  { to: "/business/members", label: "Members", icon: Users },
   { to: "/business/retention", label: "Retention", icon: Activity },
   { to: "/business/trainers", label: "Staff", icon: Users },
   { to: "/business/actions", label: "Daily actions", icon: CalendarCheck },
