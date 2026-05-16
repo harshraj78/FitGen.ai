@@ -135,6 +135,20 @@ export type MemberDetail = {
   payments: Array<any>;
   attendance: Array<any>;
   workflows: Array<any>;
+  requests: Array<MemberRequest>;
+};
+
+export type MemberRequest = {
+  id: number;
+  organization_id: number;
+  member: Profile;
+  request_type: string;
+  status: string;
+  title: string;
+  message: string;
+  payload: Record<string, unknown>;
+  resolution_note: string;
+  created_at: string;
 };
 
 export type GymTransformation = {

@@ -169,6 +169,8 @@ def member_invite_status(token: str, db: Session = Depends(get_db)) -> dict:
 
 @app.post("/api/auth/member-invite/accept", response_model=schemas.AuthOut)
 def accept_member_invite(payload: schemas.MemberInviteAccept, db: Session = Depends(get_db)) -> dict:
+    if payload.confirm_password is not None and payload.confirm_password != payload.password:
+        raise HTTPException(status_code=422, detail="Password confirmation does not match")
     member = _member_by_invite(db, payload.token)
     if member.account_id is not None:
         raise HTTPException(status_code=409, detail="This member invite has already been accepted")
@@ -244,6 +246,23 @@ def get_user(
     account: models.Account | None = Depends(_optional_account),
 ) -> models.UserProfile:
     return _get_user(db, user_id, account)
+
+
+@app.patch("/api/users/{user_id}", response_model=schemas.UserProfileOut)
+def update_user(
+    user_id: int,
+    payload: schemas.UserProfileUpdate,
+    db: Session = Depends(get_db),
+    account: models.Account = Depends(_require_account),
+) -> models.UserProfile:
+    user = _get_user(db, user_id, account)
+    values = payload.model_dump(exclude_unset=True)
+    for key, value in values.items():
+        if value is not None:
+            setattr(user, key, value)
+    db.commit()
+    db.refresh(user)
+    return user
 
 
 @app.get("/api/bootstrap")

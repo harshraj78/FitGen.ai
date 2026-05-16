@@ -7,6 +7,7 @@ import type {
   GymTransformation,
   MemberDetail,
   MemberPayload,
+  MemberRequest,
   MembershipPlanPayload,
   Organization,
   OrganizationContext,
@@ -143,11 +144,23 @@ export const api = {
   updateAction(organizationId: number, workflowId: number, payload: { status: "open" | "completed" | "dismissed"; note?: string }) {
     return request(`/api/organizations/${organizationId}/business/actions/${workflowId}`, { method: "PATCH", body: JSON.stringify(payload) });
   },
+  memberRequests(organizationId: number, status?: string) {
+    return request<MemberRequest[]>(`/api/organizations/${organizationId}/member-requests${status ? `?status=${encodeURIComponent(status)}` : ""}`);
+  },
+  createMemberRequest(organizationId: number, memberId: number, payload: { request_type: string; title: string; message: string; payload?: Record<string, unknown> }) {
+    return request<MemberRequest>(`/api/organizations/${organizationId}/members/${memberId}/requests`, { method: "POST", body: JSON.stringify(payload) });
+  },
+  updateMemberRequest(organizationId: number, requestId: number, payload: { status: "open" | "approved" | "rejected" | "resolved"; resolution_note?: string }) {
+    return request<MemberRequest>(`/api/organizations/${organizationId}/member-requests/${requestId}`, { method: "PATCH", body: JSON.stringify(payload) });
+  },
   inviteStatus(token: string) {
     return request<{ member: { id: number; name: string; email: string; phone: string }; organization: { id: number; name: string } | null; accepted: boolean }>(`/api/auth/member-invite/${token}`);
   },
-  acceptInvite(payload: { token: string; email: string; password: string }) {
+  acceptInvite(payload: { token: string; email: string; password: string; confirm_password?: string }) {
     return request<AuthResponse>("/api/auth/member-invite/accept", { method: "POST", body: JSON.stringify(payload) });
+  },
+  updateProfile(profileId: number, payload: Partial<MemberPayload>) {
+    return request<Profile>(`/api/users/${profileId}`, { method: "PATCH", body: JSON.stringify(payload) });
   },
   memberDashboard(profileId: number) {
     return request<Dashboard>(`/api/users/${profileId}/dashboard`);

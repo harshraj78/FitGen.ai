@@ -1,3 +1,4 @@
+import json
 from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -15,6 +16,38 @@ from app.services.workout_planner import WorkoutPlanner
 
 
 router = APIRouter(prefix="/organizations", tags=["organizations"])
+
+
+def serialize_member_request(request: models.MemberRequest) -> dict:
+    return {
+        "id": request.id,
+        "organization_id": request.organization_id,
+        "member": {
+            "id": request.member.id,
+            "account_id": request.member.account_id,
+            "organization_id": request.member.organization_id,
+            "assigned_trainer_id": request.member.assigned_trainer_id,
+            "member_code": request.member.member_code,
+            "phone": request.member.phone,
+            "email": request.member.email,
+            "status": request.member.status,
+            "name": request.member.name,
+            "age": request.member.age,
+            "fitness_goal": request.member.fitness_goal,
+            "gym_type": request.member.gym_type,
+            "joined_on": request.member.joined_on,
+        },
+        "request_type": request.request_type,
+        "status": request.status,
+        "title": request.title,
+        "message": request.message,
+        "payload": json.loads(request.payload_json or "{}"),
+        "resolution_note": request.resolution_note,
+        "created_by_account_id": request.created_by_account_id,
+        "reviewed_by_account_id": request.reviewed_by_account_id,
+        "reviewed_at": request.reviewed_at,
+        "created_at": request.created_at,
+    }
 
 
 @router.post("", response_model=schemas.OrganizationOut)
@@ -224,6 +257,13 @@ def member_detail(
         .limit(10)
         .all()
     )
+    requests = (
+        db.query(models.MemberRequest)
+        .filter(models.MemberRequest.organization_id == organization_id, models.MemberRequest.member_id == member.id)
+        .order_by(desc(models.MemberRequest.created_at), desc(models.MemberRequest.id))
+        .limit(10)
+        .all()
+    )
     return {
         "member": schemas.UserProfileOut.model_validate(member).model_dump(),
         "login_status": "active" if member.account_id else "invited" if member.invited_at else "not_invited",
@@ -243,6 +283,7 @@ def member_detail(
             }
             for workflow in workflows
         ],
+        "requests": [serialize_member_request(request) for request in requests],
     }
 
 
@@ -462,6 +503,110 @@ def import_attendance(
     write_audit(db, "attendance.imported", "attendance_checkin", None, account, organization_id, {"created": created, "skipped": skipped})
     db.commit()
     return {"created": created, "skipped": skipped, "errors": errors[:25]}
+
+
+@router.get("/{organization_id}/member-requests", response_model=list[schemas.MemberRequestOut])
+def list_member_requests(
+    organization_id: int,
+    status: str | None = None,
+    db: Session = Depends(get_db),
+    account: models.Account = Depends(require_account),
+) -> list[dict]:
+    membership = require_org_membership(db, organization_id, account, COACH_ROLES | {models.OrganizationRole.member.value})
+    query = db.query(models.MemberRequest).filter(models.MemberRequest.organization_id == organization_id)
+    if membership.role == models.OrganizationRole.member.value:
+        member = (
+            db.query(models.UserProfile)
+            .filter(models.UserProfile.organization_id == organization_id, models.UserProfile.account_id == account.id)
+            .first()
+        )
+        if member is None:
+            return []
+        query = query.filter(models.MemberRequest.member_id == member.id)
+    elif membership.role in {models.OrganizationRole.trainer.value, models.OrganizationRole.nutritionist.value}:
+        query = query.join(models.UserProfile, models.UserProfile.id == models.MemberRequest.member_id).filter(models.UserProfile.assigned_trainer_id == account.id)
+    if status:
+        query = query.filter(models.MemberRequest.status == status)
+    requests = query.order_by(desc(models.MemberRequest.created_at), desc(models.MemberRequest.id)).limit(100).all()
+    return [serialize_member_request(request) for request in requests]
+
+
+@router.post("/{organization_id}/members/{member_id}/requests", response_model=schemas.MemberRequestOut)
+def create_member_request(
+    organization_id: int,
+    member_id: int,
+    payload: schemas.MemberRequestCreate,
+    db: Session = Depends(get_db),
+    account: models.Account = Depends(require_account),
+) -> dict:
+    member = get_org_member(db, organization_id, member_id, account, COACH_ROLES | {models.OrganizationRole.member.value})
+    request = models.MemberRequest(
+        organization_id=organization_id,
+        member_id=member.id,
+        request_type=payload.request_type,
+        title=payload.title,
+        message=payload.message,
+        payload_json=json.dumps(payload.payload, sort_keys=True),
+        created_by_account_id=account.id,
+    )
+    db.add(request)
+    db.flush()
+    assignee_id = member.assigned_trainer_id or _default_owner_id(db, organization_id)
+    workflow = models.RetentionWorkflow(
+        organization_id=organization_id,
+        member_id=member.id,
+        assigned_account_id=assignee_id,
+        workflow_type=models.RetentionWorkflowType.trainer_follow_up_reminder.value,
+        status=models.RetentionWorkflowStatus.open.value,
+        priority="high" if payload.request_type == models.MemberRequestType.injury_report.value else "medium",
+        title=f"Member request: {payload.title}",
+        message=f"{member.name} submitted a {payload.request_type.replace('_', ' ')} request.",
+        due_on=date.today(),
+        source_entity_type="member_request",
+        source_entity_id=request.id,
+        metadata_json=json.dumps({"member_request_id": request.id, "request_type": payload.request_type}, sort_keys=True),
+    )
+    db.add(workflow)
+    write_audit(db, "member_request.created", "member_request", request.id, account, organization_id, {"request_type": payload.request_type})
+    db.commit()
+    db.refresh(request)
+    return serialize_member_request(request)
+
+
+@router.patch("/{organization_id}/member-requests/{request_id}", response_model=schemas.MemberRequestOut)
+def update_member_request(
+    organization_id: int,
+    request_id: int,
+    payload: schemas.MemberRequestUpdate,
+    db: Session = Depends(get_db),
+    account: models.Account = Depends(require_account),
+) -> dict:
+    require_org_membership(db, organization_id, account, COACH_ROLES)
+    request = db.get(models.MemberRequest, request_id)
+    if not request or request.organization_id != organization_id:
+        raise HTTPException(status_code=404, detail="Member request not found")
+    request.status = payload.status
+    request.resolution_note = payload.resolution_note
+    request.reviewed_by_account_id = account.id
+    request.reviewed_at = datetime.utcnow()
+    write_audit(db, "member_request.updated", "member_request", request.id, account, organization_id, {"status": payload.status})
+    db.commit()
+    db.refresh(request)
+    return serialize_member_request(request)
+
+
+def _default_owner_id(db: Session, organization_id: int) -> int | None:
+    membership = (
+        db.query(models.OrganizationMembership)
+        .filter(
+            models.OrganizationMembership.organization_id == organization_id,
+            models.OrganizationMembership.active.is_(True),
+            models.OrganizationMembership.role.in_([models.OrganizationRole.gym_owner.value, models.OrganizationRole.admin.value]),
+        )
+        .order_by(models.OrganizationMembership.id)
+        .first()
+    )
+    return membership.account_id if membership else None
 
 
 @router.post("/{organization_id}/members/{member_id}/goals", response_model=schemas.GoalOut)

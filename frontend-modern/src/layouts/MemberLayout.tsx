@@ -1,4 +1,4 @@
-import { ClipboardCheck, Dumbbell, Home, LogOut, Target, TrendingUp } from "lucide-react";
+import { ClipboardCheck, Dumbbell, Home, LogOut, MessageSquare, Target, TrendingUp } from "lucide-react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
@@ -9,7 +9,8 @@ const nav = [
   { to: "/app/onboarding", label: "Setup", icon: ClipboardCheck },
   { to: "/app/workout", label: "Workout", icon: Dumbbell },
   { to: "/app/progress", label: "Progress", icon: TrendingUp },
-  { to: "/app/goals", label: "Goals", icon: Target },
+  { to: "/app/requests", label: "Requests", icon: MessageSquare },
+  { to: "/app/goals", label: "Profile", icon: Target },
 ];
 
 export function MemberLayout() {

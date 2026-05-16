@@ -10,7 +10,7 @@ type AuthContextValue = {
   isAuthenticated: boolean;
   isLoading: boolean;
   login: (payload: { email: string; password: string }) => Promise<Profile | null>;
-  acceptInvite: (payload: { token: string; email: string; password: string }) => Promise<Profile | null>;
+  acceptInvite: (payload: { token: string; email: string; password: string; confirm_password?: string }) => Promise<Profile | null>;
   businessSignup: (payload: BusinessSignupPayload) => Promise<void>;
   startBusinessDemo: () => Promise<void>;
   logout: () => void;
