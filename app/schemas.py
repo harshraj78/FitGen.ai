@@ -68,6 +68,7 @@ class MemberInviteAccept(BaseModel):
     token: str = Field(min_length=20, max_length=256)
     email: str
     password: str = Field(min_length=8, max_length=128)
+    confirm_password: str | None = Field(default=None, min_length=8, max_length=128)
 
 
 class AuthOut(BaseModel):
@@ -204,6 +205,21 @@ class OrganizationMemberCreate(UserProfileCreate):
     account_id: int | None = None
     status: str = "active"
     joined_on: date | None = None
+
+
+class UserProfileUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=2, max_length=120)
+    phone: str | None = Field(default=None, max_length=40)
+    email: str | None = Field(default=None, max_length=255)
+    age: int | None = Field(default=None, ge=13, le=90)
+    height_cm: float | None = Field(default=None, gt=100, lt=230)
+    weight_kg: float | None = Field(default=None, gt=30, lt=250)
+    fitness_goal: str | None = None
+    diet_preference: str | None = None
+    budget_amount: float | None = Field(default=None, gt=0)
+    budget_period: str | None = None
+    location: str | None = Field(default=None, max_length=120)
+    gym_type: str | None = None
 
 
 class MembershipPlanCreate(BaseModel):
@@ -545,6 +561,34 @@ class MemberInviteOut(BaseModel):
     status: str
     channel: str
     expires_note: str = "Invite remains valid until accepted or regenerated."
+
+
+class MemberRequestCreate(BaseModel):
+    request_type: str = Field(pattern="^(profile_update|workout_change|diet_change|goal_change|injury_report|membership_pause|trainer_review)$")
+    title: str = Field(min_length=2, max_length=180)
+    message: str = Field(min_length=2, max_length=3000)
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class MemberRequestUpdate(BaseModel):
+    status: str = Field(pattern="^(open|approved|rejected|resolved)$")
+    resolution_note: str = Field(default="", max_length=2000)
+
+
+class MemberRequestOut(BaseModel):
+    id: int
+    organization_id: int
+    member: MemberMiniOut
+    request_type: str
+    status: str
+    title: str
+    message: str
+    payload: dict[str, Any] = Field(default_factory=dict)
+    resolution_note: str = ""
+    created_by_account_id: int | None = None
+    reviewed_by_account_id: int | None = None
+    reviewed_at: datetime | None = None
+    created_at: datetime
 
 
 class BodyMetricSnapshotCreate(BaseModel):

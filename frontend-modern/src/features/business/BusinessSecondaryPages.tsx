@@ -180,6 +180,19 @@ export function MembersPage() {
       await queryClient.invalidateQueries({ queryKey: ["member-detail", org.organization?.id, selectedId] });
     },
   });
+  const openRequests = useQuery({
+    queryKey: ["member-requests", org.organization?.id, "open"],
+    queryFn: () => api.memberRequests(org.organization!.id, "open"),
+    enabled: Boolean(org.organization?.id),
+  });
+  const reviewRequest = useMutation({
+    mutationFn: ({ requestId, status }: { requestId: number; status: "approved" | "rejected" | "resolved" }) =>
+      api.updateMemberRequest(org.organization!.id, requestId, { status }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["member-requests", org.organization?.id] });
+      await queryClient.invalidateQueries({ queryKey: ["member-detail", org.organization?.id, selectedId] });
+    },
+  });
 
   if (org.isLoading || members.isLoading) return <PageLoading label="Loading members..." />;
   if (!members.data) return <EmptyState title="Members unavailable" detail={members.error?.message || "No member data found."} />;
@@ -274,11 +287,49 @@ export function MembersPage() {
                     {current.workflows.length === 0 ? <p className="text-sm text-muted-foreground">No actions yet.</p> : null}
                   </div>
                 </div>
+                <div className="rounded-md border p-3">
+                  <p className="font-medium">Member requests</p>
+                  <div className="mt-2 grid gap-2">
+                    {(current.requests || []).slice(0, 4).map((request: any) => (
+                      <div className="rounded-md bg-muted/40 p-2 text-sm" key={request.id}>
+                        <strong>{request.title}</strong>
+                        <p className="text-muted-foreground">{label(request.request_type)} · {label(request.status)}</p>
+                      </div>
+                    ))}
+                    {current.requests?.length === 0 ? <p className="text-sm text-muted-foreground">No member requests.</p> : null}
+                  </div>
+                </div>
               </>
             ) : null}
           </CardContent>
         </Card>
       </section>
+      <Card>
+        <CardHeader>
+          <CardTitle>Open member requests</CardTitle>
+          <span className="text-sm text-muted-foreground">{openRequests.data?.length || 0} waiting for review</span>
+        </CardHeader>
+        <CardContent className="grid gap-3">
+          {(openRequests.data || []).map((request) => (
+            <div className="grid gap-3 rounded-md border p-3 md:grid-cols-[1fr_auto]" key={request.id}>
+              <div>
+                <p className="font-medium">{request.title}</p>
+                <p className="text-sm text-muted-foreground">{request.member.name} · {label(request.request_type)}</p>
+                <p className="mt-2 text-sm text-muted-foreground">{request.message}</p>
+              </div>
+              <div className="grid grid-cols-2 gap-2 md:min-w-48">
+                <Button className="h-9 px-3" disabled={reviewRequest.isPending} type="button" onClick={() => reviewRequest.mutate({ requestId: request.id, status: "approved" })}>
+                  Approve
+                </Button>
+                <Button className="h-9 px-3" disabled={reviewRequest.isPending} type="button" variant="secondary" onClick={() => reviewRequest.mutate({ requestId: request.id, status: "rejected" })}>
+                  Reject
+                </Button>
+              </div>
+            </div>
+          ))}
+          {openRequests.data?.length === 0 ? <p className="text-sm text-muted-foreground">No open member requests.</p> : null}
+        </CardContent>
+      </Card>
     </div>
   );
 }

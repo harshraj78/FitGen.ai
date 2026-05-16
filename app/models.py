@@ -155,6 +155,23 @@ class RetentionWorkflowStatus(str, Enum):
     dismissed = "dismissed"
 
 
+class MemberRequestType(str, Enum):
+    profile_update = "profile_update"
+    workout_change = "workout_change"
+    diet_change = "diet_change"
+    goal_change = "goal_change"
+    injury_report = "injury_report"
+    membership_pause = "membership_pause"
+    trainer_review = "trainer_review"
+
+
+class MemberRequestStatus(str, Enum):
+    open = "open"
+    approved = "approved"
+    rejected = "rejected"
+    resolved = "resolved"
+
+
 class Account(Base):
     __tablename__ = "accounts"
 
@@ -231,6 +248,7 @@ class UserProfile(Base):
     renewal_risk_snapshots: Mapped[list["RenewalRiskSnapshot"]] = relationship(back_populates="member", cascade="all, delete-orphan")
     body_metric_snapshots: Mapped[list["BodyMetricSnapshot"]] = relationship(back_populates="member", cascade="all, delete-orphan")
     transformation_milestones: Mapped[list["TransformationMilestone"]] = relationship(back_populates="member", cascade="all, delete-orphan")
+    member_requests: Mapped[list["MemberRequest"]] = relationship(back_populates="member", cascade="all, delete-orphan")
 
 
 class WorkoutPlan(Base):
@@ -283,6 +301,7 @@ class Organization(Base):
     notification_events: Mapped[list["NotificationEvent"]] = relationship(back_populates="organization", cascade="all, delete-orphan")
     renewal_risk_snapshots: Mapped[list["RenewalRiskSnapshot"]] = relationship(back_populates="organization", cascade="all, delete-orphan")
     retention_workflows: Mapped[list["RetentionWorkflow"]] = relationship(back_populates="organization", cascade="all, delete-orphan")
+    member_requests: Mapped[list["MemberRequest"]] = relationship(back_populates="organization", cascade="all, delete-orphan")
     body_metric_snapshots: Mapped[list["BodyMetricSnapshot"]] = relationship(back_populates="organization", cascade="all, delete-orphan")
     transformation_milestones: Mapped[list["TransformationMilestone"]] = relationship(back_populates="organization", cascade="all, delete-orphan")
 
@@ -532,6 +551,30 @@ class RetentionWorkflow(Base):
     organization: Mapped[Organization] = relationship(back_populates="retention_workflows")
     member: Mapped[UserProfile] = relationship()
     assigned_account: Mapped["Account | None"] = relationship()
+
+
+class MemberRequest(Base):
+    __tablename__ = "member_requests"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"), index=True)
+    member_id: Mapped[int] = mapped_column(ForeignKey("user_profiles.id"), index=True)
+    request_type: Mapped[str] = mapped_column(String(60), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(30), default=MemberRequestStatus.open.value, index=True)
+    title: Mapped[str] = mapped_column(String(180), nullable=False)
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    payload_json: Mapped[str] = mapped_column(Text, default="{}")
+    resolution_note: Mapped[str] = mapped_column(Text, default="")
+    created_by_account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"), nullable=True, index=True)
+    reviewed_by_account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"), nullable=True, index=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    organization: Mapped[Organization] = relationship(back_populates="member_requests")
+    member: Mapped[UserProfile] = relationship(back_populates="member_requests")
+    created_by: Mapped["Account | None"] = relationship(foreign_keys=[created_by_account_id])
+    reviewed_by: Mapped["Account | None"] = relationship(foreign_keys=[reviewed_by_account_id])
 
 
 class BodyMetricSnapshot(Base):
